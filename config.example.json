@@ -22,7 +22,7 @@
     ],
     "allowed_emails": [],
     "admin_emails": [
-      "raghu.hulgundi@ibm.com"
+      "REPLACE-with-your-email@ibm.com"
     ],
     "session_hours": 12
   },

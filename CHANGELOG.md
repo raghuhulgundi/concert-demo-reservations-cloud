@@ -2,6 +2,10 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## v1.0.1 (2026-10-30)
+
+- **Example settings:** `config.example.json` and the README use a placeholder admin email instead of a real one. Put your own email in `config.cloud.json`.
+
 ## v1.0.0 (2026-10-30)
 
 First release of the IBM Cloud Code Engine edition, based on `concert-demo-reservations` v1.1.0 (the RHEL VM edition). It has the same features: reservation board, IBMid sign-in, partner access list, editable Robin/Yoda links and full reservation history.

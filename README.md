@@ -84,7 +84,7 @@ When it's approved you get a **client ID**, a **client secret**, and a **discove
   "scopes": "openid profile email",
   "allowed_email_domains": ["ibm.com"],
   "allowed_emails": [],
-  "admin_emails": ["raghu.hulgundi@ibm.com"],
+  "admin_emails": ["you@ibm.com"],
   "session_hours": 12
 }
 ```
