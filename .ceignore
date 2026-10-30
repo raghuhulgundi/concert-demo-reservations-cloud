@@ -1,0 +1,10 @@
+# Files Code Engine should NOT upload when it builds from this folder
+.git
+config.json
+config.cloud.json
+.cloud-deploy.env
+.env
+data/
+*.db
+__pycache__/
+.DS_Store

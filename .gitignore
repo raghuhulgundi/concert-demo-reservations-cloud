@@ -1,0 +1,13 @@
+# Your real settings (client secret) stay on your Mac and in the Code Engine secret, never in git
+config.json
+config.cloud.json
+.env
+.cloud-deploy.env
+
+# Local runtime data
+data/
+*.db
+
+__pycache__/
+*.pyc
+.DS_Store

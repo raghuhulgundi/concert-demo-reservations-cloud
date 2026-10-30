@@ -1,0 +1,870 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Demo Environment Reservations</title>
+<style>
+  :root {
+    --bg: #f4f4f4; --card: #ffffff; --ink: #161616; --muted: #6f6f6f; --line: #e0e0e0;
+    --accent: #0f62fe; --accent-ink: #ffffff; --past: #f2f2f2; --sel: #d0e2ff;
+    --ok: #198038; --busy: #da1e28; --row: 26px;
+  }
+  * { box-sizing: border-box; }
+  [hidden] { display: none !important; }
+  body { margin: 0; font-family: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif; background: var(--bg); color: var(--ink); }
+  header { display: flex; flex-wrap: wrap; gap: 16px; align-items: flex-end; justify-content: space-between; padding: 24px 32px 8px; max-width: 1200px; margin: 0 auto; }
+  h1 { margin: 0 0 4px; font-size: 26px; font-weight: 600; }
+  h2 { margin: 0; font-size: 18px; font-weight: 600; }
+  .muted { color: var(--muted); }
+  #subtitle { margin: 0; max-width: 720px; font-size: 14px; }
+  .me { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
+  .refresh-label { font-size: 12px; }
+  .refresh-label.paused { color: #8a5300; }
+  .edit-link { font: inherit; font-size: 12px; font-weight: 500; margin-left: 10px; padding: 2px 8px; border: 1px solid #c6c6c6; border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; vertical-align: middle; }
+  .edit-link:hover { color: var(--ink); border-color: var(--ink); }
+  #envChanges { font-size: 12px; max-height: 180px; overflow: auto; }
+  #envChanges li { margin-bottom: 6px; overflow-wrap: anywhere; }
+  .who { text-align: right; font-size: 13px; align-items: flex-end; }
+  .btn.small { padding: 5px 10px; font-size: 12px; margin-top: 4px; }
+  dialog.wide { width: min(860px, 96vw); }
+  .small-text { font-size: 13px; margin: 0; }
+  .pt-form { display: grid; grid-template-columns: 1.4fr 1fr 1.2fr auto; gap: 10px; align-items: end; }
+  .pt-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .pt-table-wrap { max-height: 46vh; overflow: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .pt-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .pt-table th { position: sticky; top: 0; background: #f4f4f4; text-align: left; font-weight: 600; padding: 8px 10px; }
+  .pt-table td { padding: 8px 10px; border-top: 1px solid var(--line); vertical-align: top; overflow-wrap: anywhere; }
+  .pt-table td.muted { color: var(--muted); }
+  .pt-table .kind { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 3px; background: #e5f6ff; color: #00539a; margin-right: 6px; }
+  .pt-table .kind.domain { background: #fff8e1; color: #8a5300; }
+  .pt-table .empty { text-align: center; color: var(--muted); padding: 18px; }
+  .pt-table button { font: inherit; font-size: 12px; background: none; border: 1px solid #c6c6c6; border-radius: 4px; padding: 3px 8px; cursor: pointer; }
+  .pt-table button.confirm { background: var(--busy); color: #fff; border-color: var(--busy); }
+  .always { font-size: 13px; color: var(--muted); }
+  .always ul { margin: 6px 0 0; padding-left: 18px; }
+  dialog.xwide { width: min(1100px, 96vw); }
+  .hs-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1.6fr; gap: 10px; }
+  .hs-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .hs-form input, .hs-form select { width: 100%; }
+  .hs-table td { white-space: nowrap; }
+  .hs-table td.wrap { white-space: normal; min-width: 140px; }
+  .hs-table .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .st { font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; }
+  .st.upcoming, .st.in-progress { background: #e5f6ff; color: #00539a; }
+  .st.completed { background: #defbe6; color: #0e6027; }
+  .st.cancelled { background: #f4f4f4; color: #6f6f6f; text-decoration: line-through; }
+  .hs-table tr.cancelled td { color: #8d8d8d; }
+  .sub { display: block; font-size: 11px; color: var(--muted); }
+  @media (max-width: 700px) { .pt-form, .hs-form { grid-template-columns: 1fr; } }
+  .who b { color: var(--ink); }
+  .who a { color: var(--accent); }
+  input[readonly] { background: #f4f4f4; color: var(--muted); }
+  input, select, textarea { font: inherit; padding: 8px 10px; border: 1px solid #c6c6c6; border-radius: 4px; background: #fff; color: var(--ink); }
+  main { max-width: 1200px; margin: 0 auto; padding: 8px 32px 40px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 16px; margin: 16px 0 24px; }
+  .card { background: var(--card); border-radius: 8px; padding: 20px; border-top: 6px solid var(--env); box-shadow: 0 1px 2px rgba(0,0,0,.06); display: flex; flex-direction: column; gap: 12px; }
+  .card-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .card h3 { margin: 0; font-size: 24px; }
+  .card .desc { margin: 2px 0 0; font-size: 13px; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 600; padding: 4px 10px; border-radius: 999px; white-space: nowrap; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+  .pill.free { color: var(--ok); background: #defbe6; }
+  .pill.busy { color: var(--busy); background: #fff1f1; }
+  .status { font-size: 14px; }
+  .status b { font-weight: 600; }
+  .upcoming { margin: 0; padding: 0; list-style: none; font-size: 13px; border-top: 1px solid var(--line); }
+  .upcoming li { padding: 6px 0; border-bottom: 1px solid var(--line); display: flex; justify-content: space-between; gap: 8px; }
+  .upcoming li span:last-child { color: var(--muted); text-align: right; }
+  .actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: auto; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; font: inherit; font-size: 14px; font-weight: 600; padding: 10px 16px; border-radius: 4px; border: 1px solid transparent; cursor: pointer; text-decoration: none; }
+  .btn.primary { background: var(--env, var(--accent)); color: #fff; }
+  .btn.primary:hover { filter: brightness(.92); }
+  .btn.ghost { background: #fff; color: var(--ink); border-color: #c6c6c6; }
+  .btn.ghost:hover { background: #f4f4f4; }
+  .btn.danger { background: var(--busy); color: #fff; }
+  .btn[aria-disabled="true"] { opacity: .45; pointer-events: none; }
+  .notes { font-size: 12px; margin: 0; }
+
+  .schedule { background: var(--card); border-radius: 8px; padding: 16px 20px 20px; box-shadow: 0 1px 2px rgba(0,0,0,.06); }
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 14px; }
+  .toolbar .btn { padding: 6px 12px; }
+  .toolbar h2 { margin-left: 8px; }
+  #tzLabel { margin-left: auto; font-size: 12px; }
+  .grid { display: grid; grid-template-columns: 64px repeat(var(--envs), 1fr); gap: 0 10px; user-select: none; -webkit-user-select: none; }
+  .col-head { position: sticky; top: 0; z-index: 3; background: var(--card); padding: 6px 4px 8px; font-weight: 600; border-bottom: 3px solid var(--env); display: flex; justify-content: space-between; align-items: center; }
+  .col-head a { font-size: 12px; font-weight: 500; color: var(--env); }
+  .times { position: relative; }
+  .times div { height: var(--row); font-size: 11px; color: var(--muted); text-align: right; padding-right: 6px; transform: translateY(-7px); }
+  .col { position: relative; border-left: 1px solid var(--line); border-right: 1px solid var(--line); touch-action: none; }
+  .cell { height: var(--row); border-bottom: 1px solid #f0f0f0; cursor: pointer; }
+  .cell.hour { border-bottom-color: var(--line); }
+  .cell.free:hover { background: #edf5ff; }
+  .cell.past { background: var(--past); cursor: not-allowed; }
+  .cell.taken { cursor: default; }
+  .cell.sel { background: var(--sel) !important; }
+  .booking { position: absolute; left: 3px; right: 3px; border-radius: 4px; padding: 3px 8px; font-size: 12px; line-height: 1.3; color: #fff; background: var(--env); overflow: hidden; cursor: pointer; box-shadow: 0 1px 2px rgba(0,0,0,.2); z-index: 2; }
+  .booking.mine { outline: 2px solid #161616; outline-offset: -2px; }
+  .booking.past { opacity: .55; }
+  .booking b { display: block; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .booking span { white-space: nowrap; }
+  .booking.short { display: flex; gap: 8px; align-items: center; padding-top: 0; padding-bottom: 0; }
+  .booking.short b { flex: 0 1 auto; }
+  .booking.short span { overflow: hidden; text-overflow: ellipsis; opacity: .9; }
+  .nowline { position: absolute; left: 0; right: 0; height: 2px; background: var(--busy); z-index: 4; pointer-events: none; }
+  .nowline::before { content: ""; position: absolute; left: -5px; top: -4px; width: 10px; height: 10px; border-radius: 50%; background: var(--busy); }
+  .hint { font-size: 12px; margin: 12px 0 0; }
+
+  dialog { border: none; border-radius: 8px; padding: 0; width: min(440px, 92vw); box-shadow: 0 12px 40px rgba(0,0,0,.25); }
+  dialog::backdrop { background: rgba(22,22,22,.45); }
+  .dlg { padding: 22px 24px; display: flex; flex-direction: column; gap: 12px; border-top: 6px solid var(--env, var(--accent)); }
+  .dlg h3 { margin: 0; font-size: 20px; }
+  .dlg label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
+  .dlg .row { display: flex; gap: 10px; }
+  .dlg .row > * { flex: 1; }
+  .dlg .err { color: var(--busy); font-size: 13px; min-height: 0; margin: 0; }
+  .dlg .foot { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+  .kv { margin: 0; display: grid; grid-template-columns: 80px 1fr; gap: 6px 10px; font-size: 14px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; overflow-wrap: anywhere; }
+  .toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: #161616; color: #fff; padding: 10px 16px; border-radius: 4px; font-size: 14px; opacity: 0; transition: opacity .2s; pointer-events: none; z-index: 10; }
+  .toast.show { opacity: 1; }
+  @media (max-width: 640px) { header, main { padding-left: 14px; padding-right: 14px; } .grid { grid-template-columns: 44px repeat(var(--envs), 1fr); gap: 0 6px; } }
+</style>
+</head>
+<body>
+<header>
+  <div>
+    <h1 id="title">Demo Environments</h1>
+    <p id="subtitle" class="muted"></p>
+  </div>
+  <label class="me" id="nameBox">Your name
+    <input id="myName" placeholder="First Last" autocomplete="name">
+  </label>
+  <div class="me who" id="whoBox" hidden>
+    <span>Signed in as <b id="whoName"></b></span>
+    <span><span id="whoEmail"></span> &middot; <a href="/auth/logout">Sign out</a></span>
+    <button type="button" class="btn ghost small" id="partnersBtn" hidden>Partner access</button>
+  </div>
+</header>
+
+<main>
+  <section id="cards" class="cards" aria-label="Environments"></section>
+
+  <section class="schedule" aria-label="Schedule">
+    <div class="toolbar">
+      <button class="btn ghost" id="prevDay" title="Previous day">&larr;</button>
+      <button class="btn ghost" id="todayBtn">Today</button>
+      <button class="btn ghost" id="nextDay" title="Next day">&rarr;</button>
+      <input type="date" id="datePick" aria-label="Pick a date">
+      <h2 id="dayLabel"></h2>
+      <span id="tzLabel" class="muted"></span>
+      <span id="refreshLabel" class="muted refresh-label"></span>
+      <button class="btn ghost" id="historyBtn">History</button>
+    </div>
+    <div id="grid" class="grid"></div>
+    <p class="hint muted">Click a free slot, or drag down a column to select several, then confirm. Click a reservation to see who has it or to cancel your own.</p>
+  </section>
+</main>
+
+<dialog id="bookDlg">
+  <form class="dlg" id="bookForm" method="dialog">
+    <h3 id="bookTitle">Reserve</h3>
+    <div class="row">
+      <label>Environment
+        <select id="bkEnv"></select>
+      </label>
+      <label>Date
+        <input type="date" id="bkDate" required>
+      </label>
+    </div>
+    <div class="row">
+      <label>Start
+        <select id="bkStart"></select>
+      </label>
+      <label>Duration
+        <select id="bkDur"></select>
+      </label>
+    </div>
+    <label>Your name
+      <input id="bkName" maxlength="80" required placeholder="First Last">
+    </label>
+    <label>Email (optional, so people can reach you)
+      <input id="bkEmail" type="email" maxlength="120" placeholder="you@company.com">
+    </label>
+    <label>What it's for (optional)
+      <input id="bkPurpose" maxlength="200" placeholder="Customer demo, lab prep, testing...">
+    </label>
+    <p class="err" id="bkErr"></p>
+    <div class="foot">
+      <button type="button" class="btn ghost" id="bkCancel">Cancel</button>
+      <button type="submit" class="btn primary" id="bkSubmit">Reserve</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="infoDlg">
+  <div class="dlg">
+    <h3 id="infoTitle"></h3>
+    <dl class="kv" id="infoKv"></dl>
+    <p class="err" id="infoErr"></p>
+    <div class="foot">
+      <button type="button" class="btn danger" id="infoDelete" hidden>Cancel my reservation</button>
+      <a class="btn primary" id="infoOpen" target="_blank" rel="noopener">Open system</a>
+      <button type="button" class="btn ghost" id="infoClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="partnersDlg" class="wide">
+  <div class="dlg">
+    <h3>Partner access</h3>
+    <p class="muted small-text">IBM addresses can always sign in. Add partners here by individual email address, or by company domain to let everyone at that company in. Changes take effect immediately.</p>
+    <form id="ptForm" class="pt-form">
+      <label>Email or company domain
+        <input id="ptValue" maxlength="120" placeholder="jane@partnerco.com or partnerco.com" required>
+      </label>
+      <label>Company
+        <input id="ptCompany" maxlength="80" placeholder="Partner Co">
+      </label>
+      <label>Note (optional)
+        <input id="ptNote" maxlength="200" placeholder="Reseller, joint demo team...">
+      </label>
+      <button type="submit" class="btn primary" id="ptAdd">Add</button>
+    </form>
+    <p class="err" id="ptErr"></p>
+    <div class="pt-table-wrap">
+      <table class="pt-table">
+        <thead><tr><th>Company</th><th>Email or domain</th><th>Note</th><th>Added</th><th></th></tr></thead>
+        <tbody id="ptBody"></tbody>
+      </table>
+    </div>
+    <details class="always">
+      <summary>Always allowed</summary>
+      <ul id="ptAlways"></ul>
+    </details>
+    <div class="foot">
+      <button type="button" class="btn ghost" id="ptClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="envDlg">
+  <form class="dlg" id="envForm" method="dialog">
+    <h3 id="envTitle">Edit environment</h3>
+    <label>Console URL (where the Open button goes)
+      <input id="envUrl" maxlength="500" placeholder="https://..." required>
+    </label>
+    <label>Description
+      <input id="envDesc" maxlength="120" placeholder="Concert Operate on OCP cluster 1">
+    </label>
+    <label>Notes shown on the card (optional, don't put passwords here)
+      <input id="envNotes" maxlength="300" placeholder="Log in with the shared demo user">
+    </label>
+    <p class="err" id="envErr"></p>
+    <details class="always" id="envChangesBox">
+      <summary>Change history</summary>
+      <ul id="envChanges"></ul>
+    </details>
+    <div class="foot">
+      <button type="button" class="btn ghost" id="envCancel">Cancel</button>
+      <button type="submit" class="btn primary" id="envSave">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="historyDlg" class="wide xwide">
+  <div class="dlg">
+    <h3 id="hsTitle">Reservation history</h3>
+    <form id="hsForm" class="hs-form">
+      <label>From <input type="date" id="hsFrom"></label>
+      <label>To <input type="date" id="hsTo"></label>
+      <label>Environment <select id="hsEnv"><option value="">All</option></select></label>
+      <label>Status
+        <select id="hsStatus">
+          <option value="">All</option>
+          <option value="upcoming">Upcoming and in progress</option>
+          <option value="completed">Completed</option>
+          <option value="cancelled">Cancelled</option>
+        </select>
+      </label>
+      <label>Search <input id="hsQ" placeholder="Name, email or purpose"></label>
+    </form>
+    <p class="small-text" id="hsSummary"></p>
+    <p class="err" id="hsErr"></p>
+    <div class="pt-table-wrap">
+      <table class="pt-table hs-table">
+        <thead><tr><th>Date</th><th>Time</th><th>Env</th><th>Who</th><th>Purpose</th><th>Status</th><th>Booked</th></tr></thead>
+        <tbody id="hsBody"></tbody>
+      </table>
+    </div>
+    <div class="foot">
+      <span class="muted small-text" id="hsCount" style="margin-right:auto"></span>
+      <button type="button" class="btn ghost" id="hsCsv">Download CSV</button>
+      <button type="button" class="btn ghost" id="hsClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<div class="toast" id="toast"></div>
+
+<script>
+(function () {
+  "use strict";
+  var $ = function (id) { return document.getElementById(id); };
+  var S = { cfg: null, envs: [], me: { auth: false }, day: startOfDay(new Date()), dayBookings: [], upcoming: [], drag: null, tokens: loadTokens(), info: null };
+  function isMine(b) { return !!(b.mine || S.tokens[b.id]); }
+
+  // ---------- utils ----------
+  function startOfDay(d) { var x = new Date(d); x.setHours(0, 0, 0, 0); return x; }
+  function addDays(d, n) { var x = new Date(d); x.setDate(x.getDate() + n); return x; }
+  function sameDay(a, b) { return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate(); }
+  function iso(d) { return d.toISOString().replace(/\.\d{3}Z$/, "Z"); }
+  function ymd(d) { return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0") + "-" + String(d.getDate()).padStart(2, "0"); }
+  function fromYmd(s) { var p = s.split("-"); return new Date(+p[0], +p[1] - 1, +p[2]); }
+  function fmtTime(d) { return d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" }); }
+  function fmtDay(d) { return d.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric" }); }
+  function fmtRange(a, b) {
+    var s = fmtTime(a) + " to " + fmtTime(b);
+    return sameDay(a, b) ? s : fmtDay(a) + " " + fmtTime(a) + " to " + fmtDay(b) + " " + fmtTime(b);
+  }
+  function relDay(d) {
+    var t = startOfDay(new Date());
+    if (sameDay(d, t)) return "Today";
+    if (sameDay(d, addDays(t, 1))) return "Tomorrow";
+    return fmtDay(d);
+  }
+  function durLabel(min) {
+    var h = Math.floor(min / 60), m = min % 60;
+    return (h ? h + " hr" : "") + (h && m ? " " : "") + (m ? m + " min" : "");
+  }
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag);
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      if (k === "text") n.textContent = attrs[k];
+      else if (k === "class") n.className = attrs[k];
+      else if (k === "style") n.setAttribute("style", attrs[k]);
+      else if (k.slice(0, 2) === "on") n.addEventListener(k.slice(2), attrs[k]);
+      else n.setAttribute(k, attrs[k]);
+    });
+    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === "string" ? document.createTextNode(c) : c); });
+    return n;
+  }
+  function toast(msg) { var t = $("toast"); t.textContent = msg; t.classList.add("show"); clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove("show"); }, 2600); }
+  function loadTokens() { try { return JSON.parse(localStorage.getItem("demoReserveTokens") || "{}"); } catch (e) { return {}; } }
+  function saveTokens() { try { localStorage.setItem("demoReserveTokens", JSON.stringify(S.tokens)); } catch (e) {} }
+  function getName() { try { return localStorage.getItem("demoReserveName") || ""; } catch (e) { return ""; } }
+  function setName(v) { try { localStorage.setItem("demoReserveName", v); } catch (e) {} }
+  function getEmail() { try { return localStorage.getItem("demoReserveEmail") || ""; } catch (e) { return ""; } }
+  function setEmail(v) { try { localStorage.setItem("demoReserveEmail", v); } catch (e) {} }
+  function envById(id) { for (var i = 0; i < S.envs.length; i++) if (S.envs[i].id === id) return S.envs[i]; return null; }
+  function hasUrl(env) { return env.url && !/REPLACE/i.test(env.url); }
+
+  function api(path, opts) {
+    opts = opts || {};
+    opts.headers = Object.assign({ "Content-Type": "application/json" }, opts.headers || {});
+    return fetch(path, opts).then(function (r) {
+      return r.json().catch(function () { return {}; }).then(function (j) {
+        if (r.status === 401) { location.href = "/auth/login?next=" + encodeURIComponent(location.pathname); }
+        if (!r.ok) { var e = new Error(j.error || ("Request failed (" + r.status + ")")); e.status = r.status; throw e; }
+        return j;
+      });
+    });
+  }
+
+  // ---------- slot math ----------
+  function slotMin() { return S.cfg.slot_minutes; }
+  function rows() { return Math.round((S.cfg.day_end_hour - S.cfg.day_start_hour) * 60 / slotMin()); }
+  function slotStart(day, i) { var d = new Date(day); d.setHours(S.cfg.day_start_hour, i * slotMin(), 0, 0); return d; }
+  function winStart() { return slotStart(S.day, 0); }
+  function winEnd() { return slotStart(S.day, rows()); }
+
+  // ---------- data ----------
+  function load() {
+    var now = new Date();
+    var dayFrom = startOfDay(S.day), dayTo = addDays(dayFrom, 1);
+    var upFrom = new Date(now.getTime() - 12 * 3600e3), upTo = addDays(now, 14);
+    // One request for everything, to stay inside Code Engine's free request allowance.
+    return api("/api/snapshot?day_from=" + iso(dayFrom) + "&day_to=" + iso(dayTo) +
+               "&up_from=" + iso(upFrom) + "&up_to=" + iso(upTo)).then(function (r) {
+      S.cfg = r.config; S.envs = r.config.environments;
+      S.dayBookings = r.day.map(hydrate);
+      S.upcoming = r.upcoming.map(hydrate);
+      S.lastLoad = Date.now();
+      render();
+      showRefreshState();
+    }).catch(function (e) { toast("Couldn't load reservations: " + e.message); });
+  }
+  function hydrate(b) { b.s = new Date(b.start); b.e = new Date(b.end); return b; }
+
+  // ---------- render ----------
+  function render() { renderCards(); renderGrid(); }
+
+  function renderCards() {
+    var now = new Date(), wrap = $("cards");
+    wrap.innerHTML = "";
+    S.envs.forEach(function (env) {
+      var mine = S.upcoming.filter(function (b) { return b.env === env.id; });
+      var cur = mine.filter(function (b) { return b.s <= now && b.e > now; })[0];
+      var next = mine.filter(function (b) { return b.s > now; });
+      var pill = cur ? el("span", { class: "pill busy", text: "In use" }) : el("span", { class: "pill free", text: "Available now" });
+      var status;
+      if (cur) status = el("div", { class: "status" }, [el("b", { text: cur.name }), " has it until " + fmtTime(cur.e) + (cur.purpose ? " (" + cur.purpose + ")" : "")]);
+      else if (next.length) status = el("div", { class: "status" }, ["Free until ", el("b", { text: relDay(next[0].s) + " " + fmtTime(next[0].s) }), " (" + next[0].name + ")"]);
+      else status = el("div", { class: "status" }, ["No reservations in the next 14 days."]);
+
+      var list = el("ul", { class: "upcoming" });
+      next.slice(0, 4).forEach(function (b) {
+        list.appendChild(el("li", {}, [el("span", { text: relDay(b.s) + ", " + fmtRange(b.s, b.e) }), el("span", { text: b.name })]));
+      });
+
+      var open = el("a", { class: "btn primary", href: hasUrl(env) ? env.url : "#", target: "_blank", rel: "noopener", text: "Open " + env.name + " ↗" });
+      if (!hasUrl(env)) { open.setAttribute("aria-disabled", "true"); open.title = "URL not configured yet"; }
+      var book = el("button", { class: "btn ghost", text: cur ? "Reserve a later slot" : "Reserve now", onclick: function () { quickBook(env); } });
+
+      wrap.appendChild(el("article", { class: "card", style: "--env:" + env.color }, [
+        el("div", { class: "card-head" }, [
+          el("div", {}, [
+            el("h3", {}, [env.name, S.me.admin ? el("button", { class: "edit-link", type: "button", text: "Edit", title: "Change the URL, description or notes", onclick: function () { openEnvEdit(env.id); } }) : null]),
+            el("p", { class: "desc muted", text: env.description || "" })
+          ]),
+          pill
+        ]),
+        status,
+        next.length ? list : null,
+        env.notes ? el("p", { class: "notes muted", text: env.notes }) : null,
+        el("div", { class: "actions" }, [open, book])
+      ]));
+    });
+  }
+
+  function renderGrid() {
+    var g = $("grid"), n = rows(), rowH = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--row")) || 26;
+    var now = new Date(), ws = winStart(), we = winEnd();
+    g.style.setProperty("--envs", S.envs.length);
+    g.innerHTML = "";
+    $("dayLabel").textContent = S.day.toLocaleDateString([], { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+    $("datePick").value = ymd(S.day);
+
+    g.appendChild(el("div"));
+    S.envs.forEach(function (env) {
+      var link = hasUrl(env) ? el("a", { href: env.url, target: "_blank", rel: "noopener", text: "Open ↗" }) : null;
+      g.appendChild(el("div", { class: "col-head", style: "--env:" + env.color }, [el("span", { text: env.name }), link]));
+    });
+
+    var times = el("div", { class: "times" });
+    for (var i = 0; i < n; i++) {
+      var t = slotStart(S.day, i);
+      times.appendChild(el("div", { text: t.getMinutes() === 0 ? t.toLocaleTimeString([], { hour: "numeric" }) : "" }));
+    }
+    g.appendChild(times);
+
+    S.envs.forEach(function (env) {
+      var col = el("div", { class: "col", "data-env": env.id, style: "--env:" + env.color });
+      var bks = S.dayBookings.filter(function (b) { return b.env === env.id && b.s < we && b.e > ws; });
+      for (var i = 0; i < n; i++) {
+        var a = slotStart(S.day, i), b = slotStart(S.day, i + 1);
+        var taken = bks.some(function (x) { return x.s < b && x.e > a; });
+        var past = b <= now;
+        var cls = "cell" + (b.getMinutes() === 0 ? " hour" : "") + (past ? " past" : taken ? " taken" : " free");
+        col.appendChild(el("div", { class: cls, "data-i": i }));
+      }
+      bks.forEach(function (bk) {
+        var top = Math.max(0, (bk.s - ws) / 60000) / slotMin() * rowH;
+        var bot = Math.min((we - ws) / 60000, (bk.e - ws) / 60000) / slotMin() * rowH;
+        var mine = isMine(bk);
+        var block = el("div", {
+          class: "booking" + (mine ? " mine" : "") + (bk.e <= now ? " past" : "") + (bot - top < rowH * 1.9 ? " short" : ""),
+          style: "top:" + top + "px;height:" + Math.max(rowH - 2, bot - top - 2) + "px",
+          title: bk.name + ", " + fmtRange(bk.s, bk.e) + (bk.purpose ? "\n" + bk.purpose : ""),
+          onclick: function (ev) { ev.stopPropagation(); showInfo(bk); }
+        }, [el("b", { text: bk.name + (mine ? " (you)" : "") }), el("span", { text: fmtRange(bk.s, bk.e) + (bk.purpose ? " · " + bk.purpose : "") })]);
+        block.addEventListener("pointerdown", function (ev) { ev.stopPropagation(); });
+        col.appendChild(block);
+      });
+      if (sameDay(S.day, now) && now >= ws && now <= we) {
+        col.appendChild(el("div", { class: "nowline", style: "top:" + ((now - ws) / 60000 / slotMin() * rowH) + "px" }));
+      }
+      col.addEventListener("pointerdown", onDown);
+      g.appendChild(col);
+    });
+  }
+
+  // ---------- drag select ----------
+  function cellAt(x, y) { var n = document.elementFromPoint(x, y); return n && n.classList && n.classList.contains("cell") ? n : null; }
+  function onDown(ev) {
+    var c = ev.target.closest(".cell");
+    if (!c || !c.classList.contains("free")) return;
+    ev.preventDefault();
+    var col = c.parentNode, i = +c.dataset.i;
+    S.drag = { col: col, env: col.dataset.env, a: i, b: i };
+    paintSel();
+    document.addEventListener("pointermove", onMove);
+    document.addEventListener("pointerup", onUp, { once: true });
+  }
+  function onMove(ev) {
+    var c = cellAt(ev.clientX, ev.clientY);
+    if (!c || c.parentNode !== S.drag.col) return;
+    var target = +c.dataset.i, step = target >= S.drag.a ? 1 : -1, b = S.drag.a;
+    while (b !== target) {
+      var nxt = S.drag.col.querySelector('.cell[data-i="' + (b + step) + '"]');
+      if (!nxt || !nxt.classList.contains("free")) break;
+      b += step;
+    }
+    var maxSlots = Math.floor(S.cfg.max_booking_hours * 60 / slotMin());
+    if (Math.abs(b - S.drag.a) + 1 > maxSlots) b = S.drag.a + step * (maxSlots - 1);
+    S.drag.b = b;
+    paintSel();
+  }
+  function onUp() {
+    document.removeEventListener("pointermove", onMove);
+    var d = S.drag; if (!d) return;
+    var lo = Math.min(d.a, d.b), hi = Math.max(d.a, d.b);
+    openBook(d.env, slotStart(S.day, lo), (hi - lo + 1) * slotMin());
+  }
+  function paintSel() {
+    document.querySelectorAll(".cell.sel").forEach(function (c) { c.classList.remove("sel"); });
+    if (!S.drag) return;
+    var lo = Math.min(S.drag.a, S.drag.b), hi = Math.max(S.drag.a, S.drag.b);
+    for (var i = lo; i <= hi; i++) { var c = S.drag.col.querySelector('.cell[data-i="' + i + '"]'); if (c) c.classList.add("sel"); }
+  }
+  function clearSel() { S.drag = null; paintSel(); }
+
+  // ---------- booking dialog ----------
+  function quickBook(env) {
+    var now = new Date(), sm = slotMin();
+    var start = new Date(now); start.setSeconds(0, 0); start.setMinutes(Math.floor(start.getMinutes() / sm) * sm);
+    var busy = S.upcoming.filter(function (b) { return b.env === env.id && b.e > start; }).sort(function (a, b) { return a.s - b.s; });
+    // find first free slot from now
+    for (var guard = 0; guard < 500; guard++) {
+      var end = new Date(start.getTime() + sm * 60000);
+      var hit = busy.filter(function (b) { return b.s < end && b.e > start; })[0];
+      if (!hit) break;
+      start = new Date(hit.e);
+    }
+    S.day = startOfDay(start);
+    load();
+    openBook(env.id, start, 60);
+  }
+
+  function fillStartOptions(day, selected) {
+    var sel = $("bkStart"); sel.innerHTML = "";
+    var sm = slotMin(), total = 24 * 60 / sm;
+    for (var i = 0; i < total; i++) {
+      var d = new Date(day); d.setHours(0, i * sm, 0, 0);
+      if (d.getDate() !== day.getDate()) continue;
+      var o = el("option", { value: d.getHours() * 60 + d.getMinutes(), text: fmtTime(d) });
+      sel.appendChild(o);
+    }
+    var want = selected.getHours() * 60 + selected.getMinutes();
+    var best = null;
+    Array.prototype.forEach.call(sel.options, function (o) { if (best === null || Math.abs(+o.value - want) < Math.abs(+best.value - want)) best = o; });
+    if (best) best.selected = true;
+  }
+  function fillDurOptions(minutes) {
+    var sel = $("bkDur"); sel.innerHTML = "";
+    var sm = slotMin(), max = S.cfg.max_booking_hours * 60;
+    for (var m = sm; m <= max; m += sm) sel.appendChild(el("option", { value: m, text: durLabel(m) }));
+    sel.value = String(Math.min(max, Math.max(sm, minutes)));
+  }
+
+  function openBook(envId, start, minutes) {
+    var env = envById(envId);
+    var envSel = $("bkEnv"); envSel.innerHTML = "";
+    S.envs.forEach(function (e) { envSel.appendChild(el("option", { value: e.id, text: e.name })); });
+    envSel.value = envId;
+    $("bookForm").style.setProperty("--env", env.color);
+    $("bookTitle").textContent = "Reserve " + env.name;
+    $("bkDate").value = ymd(start);
+    fillStartOptions(startOfDay(start), start);
+    fillDurOptions(minutes);
+    if (S.me.auth) {
+      $("bkName").value = S.me.name || "";
+      $("bkEmail").value = S.me.email || "";
+      $("bkEmail").readOnly = true;
+    } else {
+      $("bkName").value = $("myName").value || getName();
+      $("bkEmail").value = getEmail();
+      $("bkEmail").readOnly = false;
+    }
+    $("bkPurpose").value = "";
+    $("bkErr").textContent = "";
+    $("bkSubmit").disabled = false;
+    $("bookDlg").showModal();
+    if (!$("bkName").value) $("bkName").focus();
+  }
+
+  function submitBook(ev) {
+    ev.preventDefault();
+    var envId = $("bkEnv").value, day = fromYmd($("bkDate").value);
+    var startMin = +$("bkStart").value, dur = +$("bkDur").value;
+    var start = new Date(day); start.setHours(0, startMin, 0, 0);
+    var end = new Date(start.getTime() + dur * 60000);
+    var name = $("bkName").value.trim(), email = $("bkEmail").value.trim();
+    if (!name) { $("bkErr").textContent = "Please enter your name."; return; }
+    $("bkSubmit").disabled = true; $("bkErr").textContent = "";
+    api("/api/bookings", { method: "POST", body: JSON.stringify({ env: envId, start: iso(start), end: iso(end), name: name, email: email, purpose: $("bkPurpose").value.trim() }) })
+      .then(function (r) {
+        S.tokens[r.booking.id] = r.token; saveTokens();
+        if (!S.me.auth) { setName(name); setEmail(email); $("myName").value = name; }
+        $("bookDlg").close(); clearSel();
+        S.day = startOfDay(start);
+        toast(envById(envId).name + " reserved: " + relDay(start) + ", " + fmtRange(start, end));
+        load();
+      })
+      .catch(function (e) { $("bkErr").textContent = e.message; $("bkSubmit").disabled = false; });
+  }
+
+  // ---------- info dialog ----------
+  function showInfo(bk) {
+    var env = envById(bk.env); S.info = bk;
+    var box = $("infoDlg").querySelector(".dlg"); box.style.setProperty("--env", env.color);
+    $("infoTitle").textContent = env.name + " reserved";
+    var kv = $("infoKv"); kv.innerHTML = "";
+    function row(k, v) { kv.appendChild(el("dt", { text: k })); kv.appendChild(el("dd", {}, [v])); }
+    row("Who", bk.name);
+    row("When", fmtDay(bk.s) + ", " + fmtRange(bk.s, bk.e));
+    if (bk.purpose) row("For", bk.purpose);
+    if (bk.email) row("Contact", el("a", { href: "mailto:" + bk.email, text: bk.email }));
+    $("infoErr").textContent = "";
+    var del = $("infoDelete"), mine = isMine(bk);
+    del.hidden = !(mine || S.me.admin) || bk.e <= new Date();
+    del.dataset.confirm = "";
+    del.dataset.label = mine ? "Cancel my reservation" : "Cancel this reservation (admin)";
+    del.textContent = del.dataset.label;
+    var open = $("infoOpen"); open.textContent = "Open " + env.name + " ↗";
+    if (hasUrl(env)) { open.href = env.url; open.removeAttribute("aria-disabled"); } else { open.removeAttribute("href"); open.setAttribute("aria-disabled", "true"); }
+    $("infoDlg").showModal();
+  }
+  function deleteInfo() {
+    var del = $("infoDelete"), bk = S.info;
+    if (!del.dataset.confirm) { del.dataset.confirm = "1"; del.textContent = "Click again to confirm"; return; }
+    api("/api/bookings/" + bk.id, { method: "DELETE", headers: S.tokens[bk.id] ? { "X-Booking-Token": S.tokens[bk.id] } : {} })
+      .then(function () { delete S.tokens[bk.id]; saveTokens(); $("infoDlg").close(); toast("Reservation cancelled"); load(); })
+      .catch(function (e) { $("infoErr").textContent = e.message; });
+  }
+
+  // ---------- partner access (admins) ----------
+  function loadPartners() {
+    return api("/api/partners").then(function (r) {
+      var body = $("ptBody"); body.innerHTML = "";
+      if (!r.partners.length) body.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "5", text: "No partners added yet." })]));
+      r.partners.forEach(function (p) {
+        var rm = el("button", { type: "button", text: "Remove" });
+        rm.onclick = function () {
+          if (!rm.classList.contains("confirm")) { rm.classList.add("confirm"); rm.textContent = "Confirm remove"; return; }
+          api("/api/partners/" + p.id, { method: "DELETE" })
+            .then(function () { toast(p.value + " removed"); loadPartners(); })
+            .catch(function (e) { $("ptErr").textContent = e.message; });
+        };
+        var added = p.added_at ? fmtDay(new Date(p.added_at)) : "";
+        body.appendChild(el("tr", {}, [
+          el("td", { text: p.company || "" }),
+          el("td", {}, [el("span", { class: "kind " + p.kind, text: p.kind === "domain" ? "Whole domain" : "Person" }), p.kind === "domain" ? "*@" + p.value : p.value]),
+          el("td", { class: "muted", text: p.note || "" }),
+          el("td", { class: "muted", text: added + (p.added_by ? " by " + p.added_by.split("@")[0] : "") }),
+          el("td", {}, [rm])
+        ]));
+      });
+      var ul = $("ptAlways"); ul.innerHTML = "";
+      r.always_allowed.forEach(function (t) { ul.appendChild(el("li", { text: t })); });
+    }).catch(function (e) { $("ptErr").textContent = e.message; });
+  }
+  function openPartners() {
+    $("ptErr").textContent = ""; $("ptForm").reset();
+    $("partnersDlg").showModal(); loadPartners(); $("ptValue").focus();
+  }
+  function addPartner(ev) {
+    ev.preventDefault();
+    $("ptErr").textContent = ""; $("ptAdd").disabled = true;
+    api("/api/partners", { method: "POST", body: JSON.stringify({ value: $("ptValue").value, company: $("ptCompany").value, note: $("ptNote").value }) })
+      .then(function (r) {
+        toast((r.partner.kind === "domain" ? "Everyone at @" : "") + r.partner.value + " can now sign in");
+        $("ptValue").value = ""; $("ptNote").value = ""; $("ptValue").focus();
+        return loadPartners();
+      })
+      .catch(function (e) { $("ptErr").textContent = e.message; })
+      .then(function () { $("ptAdd").disabled = false; });
+  }
+
+  // ---------- edit environment (admins) ----------
+  var EV = { id: null };
+  var FIELD_LABEL = { url: "URL", description: "Description", notes: "Notes" };
+  function openEnvEdit(id) {
+    var env = envById(id); EV.id = id;
+    $("envForm").style.setProperty("--env", env.color);
+    $("envTitle").textContent = "Edit " + env.name;
+    $("envUrl").value = hasUrl(env) ? env.url : "";
+    $("envDesc").value = env.description || "";
+    $("envNotes").value = env.notes || "";
+    $("envErr").textContent = ""; $("envSave").disabled = false;
+    var ul = $("envChanges"); ul.innerHTML = "";
+    $("envDlg").showModal();
+    api("/api/environments/" + id + "/changes").then(function (r) {
+      $("envChangesBox").hidden = !r.changes.length;
+      r.changes.forEach(function (c) {
+        ul.appendChild(el("li", {}, [
+          el("b", { text: FIELD_LABEL[c.field] || c.field }), " changed " + fmtDay(new Date(c.changed_at)) + " " + fmtTime(new Date(c.changed_at)) + " by " + c.changed_by,
+          el("span", { class: "sub", text: "from: " + (c.old_value || "(empty)") }),
+          el("span", { class: "sub", text: "to: " + (c.new_value || "(empty)") })
+        ]));
+      });
+    }).catch(function () { $("envChangesBox").hidden = true; });
+  }
+  function saveEnv(ev) {
+    ev.preventDefault();
+    $("envSave").disabled = true; $("envErr").textContent = "";
+    var name = envById(EV.id).name;
+    api("/api/environments/" + EV.id, { method: "PUT", body: JSON.stringify({ url: $("envUrl").value.trim(), description: $("envDesc").value.trim(), notes: $("envNotes").value.trim() }) })
+      .then(function (r) {
+        $("envDlg").close();
+        toast(r.changed.length ? name + " updated. Everyone sees it within 30 seconds." : "No changes");
+        load();
+      })
+      .catch(function (e) { $("envErr").textContent = e.message; $("envSave").disabled = false; });
+  }
+
+  // ---------- history ----------
+  var HS = { rows: [], timer: null };
+  function historyQuery() {
+    var p = [];
+    if ($("hsFrom").value) p.push("from=" + iso(fromYmd($("hsFrom").value)));
+    if ($("hsTo").value) p.push("to=" + iso(addDays(fromYmd($("hsTo").value), 1)));
+    if ($("hsEnv").value) p.push("env=" + encodeURIComponent($("hsEnv").value));
+    if ($("hsStatus").value) p.push("status=" + encodeURIComponent($("hsStatus").value));
+    if ($("hsQ").value.trim()) p.push("q=" + encodeURIComponent($("hsQ").value.trim()));
+    p.push("limit=5000");
+    return "/api/history?" + p.join("&");
+  }
+  function loadHistory() {
+    $("hsErr").textContent = "";
+    return api(historyQuery()).then(function (r) {
+      HS.rows = r.reservations;
+      $("hsTitle").textContent = r.scope === "all" ? "Reservation history" : "My reservation history";
+      var body = $("hsBody"); body.innerHTML = "";
+      if (!r.reservations.length) body.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "7", text: "No reservations match these filters." })]));
+      r.reservations.forEach(function (h) {
+        var s = new Date(h.start), e = new Date(h.end), env = envById(h.env);
+        var statusCls = h.status.replace(" ", "-");
+        var statusCell = el("td", {}, [el("span", { class: "st " + statusCls, text: h.status.charAt(0).toUpperCase() + h.status.slice(1) })]);
+        if (h.cancelled_at) statusCell.appendChild(el("span", { class: "sub", text: fmtDay(new Date(h.cancelled_at)) + " by " + h.cancelled_by }));
+        body.appendChild(el("tr", { class: h.status === "cancelled" ? "cancelled" : "" }, [
+          el("td", { text: s.toLocaleDateString([], { weekday: "short", month: "short", day: "numeric", year: "numeric" }) }),
+          el("td", {}, [fmtRange(s, e), el("span", { class: "sub", text: durLabel(Math.round(h.hours * 60)) })]),
+          el("td", {}, [el("span", { class: "dot", style: "background:" + (env ? env.color : "#888") }), h.env_name]),
+          el("td", { class: "wrap" }, [h.name, h.email ? el("span", { class: "sub", text: h.email }) : null]),
+          el("td", { class: "wrap muted", text: h.purpose }),
+          statusCell,
+          el("td", { class: "muted", text: fmtDay(new Date(h.booked_at)) })
+        ]));
+      });
+      var parts = r.summary.map(function (x) { return x.env_name + ": " + x.reservations + " reservation" + (x.reservations === 1 ? "" : "s") + ", " + x.hours + " hrs"; });
+      $("hsSummary").textContent = parts.length ? "Not counting cancellations, " + parts.join("  ·  ") : "";
+      $("hsCount").textContent = r.total > r.returned ? "Showing newest " + r.returned + " of " + r.total + ". Narrow the dates to see older ones." : r.total + " reservation" + (r.total === 1 ? "" : "s");
+    }).catch(function (e) { $("hsErr").textContent = e.message; });
+  }
+  function openHistory() {
+    var sel = $("hsEnv");
+    if (sel.options.length === 1) S.envs.forEach(function (e) { sel.appendChild(el("option", { value: e.id, text: e.name })); });
+    $("historyDlg").showModal();
+    loadHistory();
+  }
+  function csvCell(v) { v = v == null ? "" : String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; }
+  function downloadCsv() {
+    var head = ["Environment", "Date", "Start", "End", "Hours", "Name", "Email", "Purpose", "Status", "Booked at", "Cancelled at", "Cancelled by", "Start (UTC)", "End (UTC)", "ID"];
+    var lines = [head.join(",")];
+    HS.rows.slice().reverse().forEach(function (h) {
+      var s = new Date(h.start), e = new Date(h.end);
+      lines.push([h.env_name, ymd(s), fmtTime(s), fmtTime(e), h.hours, h.name, h.email, h.purpose, h.status,
+        new Date(h.booked_at).toLocaleString(), h.cancelled_at ? new Date(h.cancelled_at).toLocaleString() : "", h.cancelled_by,
+        h.start, h.end, h.id].map(csvCell).join(","));
+    });
+    var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = el("a", { href: URL.createObjectURL(blob), download: "reservation-history-" + ymd(new Date()) + ".csv" });
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
+  // ---------- auto refresh ----------
+  // Refreshes only while the tab is visible and someone has used the page recently. An idle or
+  // background tab makes no requests, so Code Engine can scale the app to zero (and stay free).
+  var R = { lastActive: Date.now(), timer: null, paused: false };
+  function anyDialogOpen() {
+    return ["bookDlg", "infoDlg", "partnersDlg", "historyDlg", "envDlg"].some(function (id) { return $(id).open; });
+  }
+  function refreshEveryMs() { return Math.max(15, (S.cfg && S.cfg.refresh_seconds) || 60) * 1000; }
+  function idleLimitMs() { return Math.max(1, (S.cfg && S.cfg.idle_pause_minutes) || 15) * 60000; }
+  function showRefreshState() {
+    var lbl = $("refreshLabel"); if (!lbl) return;
+    if (R.paused) { lbl.textContent = "Auto-refresh paused. Click anywhere to update."; lbl.classList.add("paused"); }
+    else { lbl.textContent = S.lastLoad ? "Updated " + fmtTime(new Date(S.lastLoad)) : ""; lbl.classList.remove("paused"); }
+  }
+  function tick() {
+    var idle = Date.now() - R.lastActive > idleLimitMs();
+    if (document.hidden || idle) { if (!R.paused) { R.paused = true; showRefreshState(); } return; }
+    if (!anyDialogOpen() && !S.drag) load();
+  }
+  function wake() {
+    R.lastActive = Date.now();
+    if (R.paused && !document.hidden) {
+      R.paused = false;
+      if (!S.lastLoad || Date.now() - S.lastLoad > refreshEveryMs() / 2) load(); else showRefreshState();
+    }
+  }
+  function startAutoRefresh() {
+    clearInterval(R.timer);
+    R.timer = setInterval(tick, refreshEveryMs());
+    ["pointerdown", "keydown", "wheel", "touchstart"].forEach(function (ev) { document.addEventListener(ev, wake, { passive: true }); });
+    document.addEventListener("visibilitychange", function () { if (!document.hidden) wake(); });
+  }
+
+  // ---------- wire up ----------
+  function init() {
+    Promise.all([api("/api/config"), api("/api/me")]).then(function (res) {
+      var cfg = res[0]; S.me = res[1];
+      S.cfg = cfg; S.envs = cfg.environments;
+      if (S.me.auth) {
+        $("nameBox").hidden = true; $("whoBox").hidden = false;
+        $("whoName").textContent = S.me.name + (S.me.admin ? " (admin)" : "");
+        $("whoEmail").textContent = S.me.email;
+        $("partnersBtn").hidden = !S.me.admin;
+      }
+      document.title = cfg.title || document.title;
+      $("title").textContent = cfg.title || "Demo Environments";
+      $("subtitle").textContent = cfg.subtitle || "";
+      var tz = ""; try { tz = Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (e) {}
+      $("tzLabel").textContent = "Times shown in your time zone" + (tz ? " (" + tz + ")" : "");
+      $("myName").value = getName();
+      load();
+      startAutoRefresh();
+    }).catch(function (e) { toast("Couldn't reach the server: " + e.message); });
+
+    $("myName").addEventListener("change", function () { setName(this.value.trim()); });
+    $("prevDay").onclick = function () { S.day = addDays(S.day, -1); load(); };
+    $("nextDay").onclick = function () { S.day = addDays(S.day, 1); load(); };
+    $("todayBtn").onclick = function () { S.day = startOfDay(new Date()); load(); };
+    $("datePick").onchange = function () { if (this.value) { S.day = fromYmd(this.value); load(); } };
+    $("bookForm").addEventListener("submit", submitBook);
+    $("bkCancel").onclick = function () { $("bookDlg").close(); };
+    $("bookDlg").addEventListener("close", clearSel);
+    $("bkDate").onchange = function () { if (this.value) { var d = fromYmd(this.value); var cur = +$("bkStart").value; var s = new Date(d); s.setHours(0, cur, 0, 0); fillStartOptions(d, s); } };
+    $("bkEnv").onchange = function () { var env = envById(this.value); $("bookForm").style.setProperty("--env", env.color); $("bookTitle").textContent = "Reserve " + env.name; };
+    $("infoClose").onclick = function () { $("infoDlg").close(); };
+    $("infoDelete").onclick = deleteInfo;
+    $("partnersBtn").onclick = openPartners;
+    $("historyBtn").onclick = openHistory;
+    $("envForm").addEventListener("submit", saveEnv);
+    $("envCancel").onclick = function () { $("envDlg").close(); };
+    $("hsClose").onclick = function () { $("historyDlg").close(); };
+    $("hsCsv").onclick = downloadCsv;
+    ["hsFrom", "hsTo", "hsEnv", "hsStatus"].forEach(function (id) { $(id).addEventListener("change", loadHistory); });
+    $("hsQ").addEventListener("input", function () { clearTimeout(HS.timer); HS.timer = setTimeout(loadHistory, 300); });
+    $("hsForm").addEventListener("submit", function (e) { e.preventDefault(); loadHistory(); });
+    $("ptForm").addEventListener("submit", addPartner);
+    $("ptClose").onclick = function () { $("partnersDlg").close(); };
+  }
+  init();
+})();
+</script>
+</body>
+</html>
