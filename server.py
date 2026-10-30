@@ -38,7 +38,7 @@ CONFIG_PATH = os.environ.get("RESERVE_CONFIG", os.path.join(BASE_DIR, "config.js
 DB_PATH = os.environ.get("RESERVE_DB", os.path.join(BASE_DIR, "data", "reservations.db"))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-__version__ = "1.0.1"
+__version__ = "1.1.0"
 EDITION = "code-engine"
 
 if os.environ.get("RESERVE_CONFIG_JSON"):
@@ -351,6 +351,10 @@ def init_db():
                 updated_at TEXT
             )"""
         )
+        env_cols = [r[1] for r in conn.execute("PRAGMA table_info(env_settings)").fetchall()]
+        for col in ("tagline", "details", "links"):
+            if col not in env_cols:
+                conn.execute("ALTER TABLE env_settings ADD COLUMN %s TEXT" % col)
         conn.execute(
             """CREATE TABLE IF NOT EXISTS env_changes (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -476,7 +480,45 @@ def history_row(row, now):
     }
 
 
-EDITABLE_ENV_FIELDS = ("url", "description", "notes")
+EDITABLE_ENV_FIELDS = ("url", "description", "notes", "tagline", "details", "links")
+MAX_LINKS = 12
+
+
+def clean_multiline(value, limit):
+    """Like clean_text, but keeps line breaks (for the launch page's details)."""
+    value = value if isinstance(value, str) else ""
+    value = value.replace("\r\n", "\n").replace("\r", "\n")
+    value = re.sub(r"[\x00-\x08\x0b-\x1f\x7f]", " ", value)
+    value = re.sub(r"\n{4,}", "\n\n\n", value)
+    return value.strip()[:limit]
+
+
+def clean_links(value):
+    """A list of {"label", "url"} with http(s) URLs only. Raises ValueError with a friendly message."""
+    if value in (None, ""):
+        return []
+    if not isinstance(value, list):
+        raise ValueError("links must be a list")
+    out = []
+    for item in value[:MAX_LINKS]:
+        if not isinstance(item, dict):
+            raise ValueError("Each link needs a label and a URL")
+        url = clean_text(item.get("url"), 500)
+        label = clean_text(item.get("label"), 80) or url
+        if not url:
+            continue
+        if not URL_RE.match(url):
+            raise ValueError("Link URLs must start with https:// (or http://): %s" % url[:60])
+        out.append({"label": label, "url": url})
+    return out
+
+
+def links_from_text(text):
+    try:
+        data = json.loads(text) if text else []
+        return data if isinstance(data, list) else []
+    except ValueError:
+        return []
 
 
 def environments():
@@ -488,12 +530,13 @@ def environments():
         conn.close()
     out = []
     for e in CONFIG["environments"]:
-        item = {k: e.get(k, "") for k in ("id", "name", "description", "url", "notes", "color")}
+        item = {k: e.get(k, "") for k in ("id", "name", "description", "url", "notes", "color", "tagline", "details")}
+        item["links"] = e.get("links") if isinstance(e.get("links"), list) else []
         o = overrides.get(e["id"])
         if o:
             for f in EDITABLE_ENV_FIELDS:
                 if o[f] is not None:
-                    item[f] = o[f]
+                    item[f] = links_from_text(o[f]) if f == "links" else o[f]
             item["updated_by"] = o["updated_by"] or ""
             item["updated_at"] = o["updated_at"] or ""
         out.append(item)
@@ -813,6 +856,12 @@ class Handler(BaseHTTPRequestHandler):
                 new["description"] = clean_text(data.get("description"), 120)
             if "notes" in data:
                 new["notes"] = clean_text(data.get("notes"), 300)
+            if "tagline" in data:
+                new["tagline"] = clean_text(data.get("tagline"), 80)
+            if "details" in data:
+                new["details"] = clean_multiline(data.get("details"), 5000)
+            if "links" in data:
+                new["links"] = clean_links(data.get("links"))
             if not new:
                 raise ValueError("Nothing to change")
         except (ValueError, json.JSONDecodeError) as e:
@@ -820,32 +869,35 @@ class Handler(BaseHTTPRequestHandler):
         by = user["e"] if user else "admin key"
         when = fmt_utc(now_utc())
         current = {e["id"]: e for e in environments()}[env_id]
-        changed = [f for f in new if (current.get(f) or "") != new[f]]
+        as_text = lambda f, v: json.dumps(v or []) if f == "links" else (v or "")
+        changed = [f for f in new if as_text(f, current.get(f)) != as_text(f, new[f])]
         if not changed:
             return self.send_json(200, {"environment": current, "changed": []})
         with WRITE_LOCK:
             conn = connect()
             try:
                 row = conn.execute("SELECT * FROM env_settings WHERE env = ?", (env_id,)).fetchone()
-                merged = {f: (row[f] if row and row[f] is not None else current.get(f, "")) for f in EDITABLE_ENV_FIELDS}
-                merged.update(new)
-                values = (merged["url"], merged["description"], merged["notes"], by, when, env_id)
+                merged = {f: as_text(f, current.get(f)) for f in EDITABLE_ENV_FIELDS}
+                for f, v in new.items():
+                    merged[f] = as_text(f, v)
+                cols = list(EDITABLE_ENV_FIELDS)
+                values = [merged[f] for f in cols] + [by, when, env_id]
                 if row:
-                    conn.execute("UPDATE env_settings SET url = ?, description = ?, notes = ?, updated_by = ?, "
-                                 "updated_at = ? WHERE env = ?", values)
+                    conn.execute("UPDATE env_settings SET %s, updated_by = ?, updated_at = ? WHERE env = ?"
+                                 % ", ".join("%s = ?" % f for f in cols), values)
                 else:
-                    conn.execute("INSERT INTO env_settings (url, description, notes, updated_by, updated_at, env) "
-                                 "VALUES (?, ?, ?, ?, ?, ?)", values)
+                    conn.execute("INSERT INTO env_settings (%s, updated_by, updated_at, env) VALUES (%s)"
+                                 % (", ".join(cols), ", ".join("?" * (len(cols) + 3))), values)
                 for f in changed:
                     conn.execute(
                         "INSERT INTO env_changes (env, field, old_value, new_value, changed_by, changed_at) VALUES (?, ?, ?, ?, ?, ?)",
-                        (env_id, f, current.get(f, ""), new[f], by, when),
+                        (env_id, f, as_text(f, current.get(f)), as_text(f, new[f]), by, when),
                     )
                 conn.commit()
             finally:
                 conn.close()
         for f in changed:
-            self.log_message("%s changed %s %s: %r -> %r", by, env_id, f, current.get(f, ""), new[f])
+            self.log_message("%s changed %s %s", by, env_id, f)
         updated = {e["id"]: e for e in environments()}[env_id]
         return self.send_json(200, {"environment": updated, "changed": changed})
 
@@ -1001,6 +1053,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return self.send_static("index.html", "text/html; charset=utf-8")
+        m_env = re.match(r"^/env/([A-Za-z0-9_-]+)/?$", path)
+        if m_env:
+            if m_env.group(1) not in ENVS:
+                return self.redirect("/")
+            return self.send_static("env.html", "text/html; charset=utf-8")
         if path == "/api/config":
             return self.send_json(200, public_config())
         if path == "/api/history":

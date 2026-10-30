@@ -2,6 +2,11 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## v1.1.0 (2026-10-30)
+
+- **Launch page per environment** (`/env/robin`, `/env/yoda`): tagline, live status, a Launch console button, details, notes, useful links and upcoming reservations. The Open buttons go here. Same as the VM edition v1.2.0.
+- **Taglines on the main cards and new fields in the Edit dialog:** tagline, details and links. All changes are logged and saved to Object Storage like everything else.
+
 ## v1.0.1 (2026-10-30)
 
 - **Example settings:** `config.example.json` and the README use a placeholder admin email instead of a real one. Put your own email in `config.cloud.json`.

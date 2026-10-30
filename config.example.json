@@ -30,18 +30,24 @@
     {
       "id": "robin",
       "name": "Robin",
+      "tagline": "App centric demo",
       "description": "Concert Operate on OCP cluster 1",
       "url": "https://REPLACE-with-robin-concert-operate-url",
       "notes": "",
-      "color": "#d2591b"
+      "color": "#d2591b",
+      "details": "",
+      "links": []
     },
     {
       "id": "yoda",
       "name": "Yoda",
+      "tagline": "Network centric demo",
       "description": "Concert Operate on OCP cluster 2",
       "url": "https://REPLACE-with-yoda-concert-operate-url",
       "notes": "",
-      "color": "#198038"
+      "color": "#198038",
+      "details": "",
+      "links": []
     }
   ]
 }
