@@ -28,7 +28,6 @@ import time
 import urllib.error
 import urllib.request
 from datetime import datetime, timedelta, timezone
-from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
 from urllib.parse import parse_qs, quote, urlencode, urlparse
@@ -38,7 +37,7 @@ CONFIG_PATH = os.environ.get("RESERVE_CONFIG", os.path.join(BASE_DIR, "config.js
 DB_PATH = os.environ.get("RESERVE_DB", os.path.join(BASE_DIR, "data", "reservations.db"))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-__version__ = "1.1.2"
+__version__ = "1.1.3"
 EDITION = "code-engine"
 
 if os.environ.get("RESERVE_CONFIG_JSON"):
@@ -90,6 +89,10 @@ SESSION_HOURS = float(AUTH.get("session_hours", 12))
 COOKIE_SECURE = truthy(AUTH.get("cookie_secure", True))
 SESSION_COOKIE = "demo_reserve_session"
 TX_COOKIE = "demo_reserve_oidc"
+
+
+def tx_cookie_name(state):
+    return TX_COOKIE + "_" + hashlib.sha256(state.encode()).hexdigest()[:12]
 
 ISO_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?Z$")
 WRITE_LOCK = threading.Lock()
@@ -754,8 +757,8 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("%s [%s] %s\n" % (self.address_string(), self.log_date_time_string(), fmt % args))
 
     # ---------- response helpers ----------
-    def cookie_header(self, name, value, max_age):
-        parts = ["%s=%s" % (name, value), "Path=/", "HttpOnly", "SameSite=Lax", "Max-Age=%d" % max_age]
+    def cookie_header(self, name, value, max_age, path="/"):
+        parts = ["%s=%s" % (name, value), "Path=" + path, "HttpOnly", "SameSite=Lax", "Max-Age=%d" % max_age]
         if COOKIE_SECURE:
             parts.append("Secure")
         return "; ".join(parts)
@@ -801,12 +804,14 @@ class Handler(BaseHTTPRequestHandler):
         return data
 
     def cookies(self):
-        jar = SimpleCookie()
-        try:
-            jar.load(self.headers.get("Cookie") or "")
-        except Exception:
-            pass
-        return {k: m.value for k, m in jar.items()}
+        # Tolerant parser: http.cookies.SimpleCookie drops every cookie in the header
+        # when any one of them (often set by another site on a parent domain) is malformed.
+        out = {}
+        for part in (self.headers.get("Cookie") or "").split(";"):
+            name, sep, value = part.strip().partition("=")
+            if sep and name and name not in out:
+                out[name] = value.strip().strip('"')
+        return out
 
     def current_user(self):
         if not AUTH_ON:
@@ -969,6 +974,8 @@ class Handler(BaseHTTPRequestHandler):
             d = discovery()
         except AuthError as e:
             return self.send_page(502, "Sign-in unavailable", str(e), "/auth/login", "Try again")
+        if self.current_user():
+            return self.redirect(nxt)
         state, nonce = secrets.token_urlsafe(24), secrets.token_urlsafe(24)
         verifier = secrets.token_urlsafe(48) if OIDC_PKCE else ""
         params = {
@@ -984,18 +991,28 @@ class Handler(BaseHTTPRequestHandler):
             params["code_challenge_method"] = "S256"
         tx = sign({"s": state, "n": nonce, "v": verifier, "next": nxt, "exp": time.time() + 900})
         sep = "&" if "?" in d["authorization_endpoint"] else "?"
-        self.redirect(d["authorization_endpoint"] + sep + urlencode(params), [self.cookie_header(TX_COOKIE, tx, 900)])
+        # One cookie per sign-in attempt, so parallel attempts (two tabs, a stray
+        # background request) can't overwrite each other's state.
+        self.redirect(d["authorization_endpoint"] + sep + urlencode(params),
+                      [self.cookie_header(tx_cookie_name(state), tx, 900, "/auth")])
 
     def auth_callback(self, query):
-        clear_tx = self.cookie_header(TX_COOKIE, "", 0)
+        state = query.get("state", [""])[0]
+        clear_tx = self.cookie_header(tx_cookie_name(state), "", 0, "/auth")
         if query.get("error"):
             msg = query.get("error_description", query["error"])[0]
             return self.send_page(401, "Sign-in didn't complete", msg, "/auth/login", "Try again", [clear_tx])
-        tx = unsign(self.cookies().get(TX_COOKIE, ""))
-        state = query.get("state", [""])[0]
+        jar = self.cookies()
+        tx = unsign(jar.get(tx_cookie_name(state), "")) if state else None
+        if not tx and state:
+            tx = unsign(jar.get(TX_COOKIE, ""))  # attempt started before v1.3.1
         if not tx or not state or not hmac.compare_digest(state, tx.get("s", "")):
+            if self.current_user():
+                # A duplicate or replayed callback after a sign-in that already worked.
+                return self.redirect("/")
+            self.log_message("sign-in state not found (cookies sent: %s)", ",".join(sorted(jar)) or "none")
             return self.send_page(400, "Sign-in expired", "Your sign-in attempt timed out or was started in another tab. Please try again.",
-                                  "/auth/login", "Sign in", [clear_tx])
+                                  "/auth/login", "Sign in")
         code = query.get("code", [""])[0]
         if not code:
             return self.send_page(400, "Sign-in didn't complete", "No authorization code was returned.", "/auth/login", "Try again", [clear_tx])
@@ -1029,6 +1046,9 @@ class Handler(BaseHTTPRequestHandler):
         path, query = url.path, parse_qs(url.query)
         if path == "/healthz":
             return self.send_json(200, {"ok": True, "version": __version__, "edition": EDITION, "storage": STORAGE.status()})
+        if path in ("/favicon.ico", "/apple-touch-icon.png", "/apple-touch-icon-precomposed.png", "/robots.txt"):
+            # Browsers fetch these on their own; never let them start a sign-in.
+            return self.send_body(404, b"", "text/plain")
         if AUTH_ON:
             if path == "/auth/login":
                 return self.auth_login(query)
@@ -1051,7 +1071,9 @@ class Handler(BaseHTTPRequestHandler):
         if AUTH_ON and not user:
             if path.startswith("/api/"):
                 return self.send_json(401, {"error": "Please sign in"})
-            return self.redirect("/auth/login?" + urlencode({"next": self.path}))
+            if path in ("/", "/index.html") or re.match(r"^/env/[A-Za-z0-9_-]+/?$", path):
+                return self.redirect("/auth/login?" + urlencode({"next": self.path}))
+            return self.send_body(404, b"Not found", "text/plain")
 
         if path in ("/", "/index.html"):
             return self.send_static("index.html", "text/html; charset=utf-8")

@@ -11,3 +11,9 @@ data/
 __pycache__/
 *.pyc
 .DS_Store
+
+# Editor swap and backup files (can hold copies of secrets)
+*.swp
+*.swo
+*.bak
+*~
