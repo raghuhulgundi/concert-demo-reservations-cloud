@@ -139,7 +139,7 @@ Each environment has its own **launch page**, at `/env/robin` and `/env/yoda`. T
 - **Status:** live status (available, or who has it until when) and a **Launch console** button that opens the Concert Operate console in a new tab.
 - **About this demo:** longer **details**, such as what the environment demos, scenarios, how to run it and who to ask. Line breaks are kept and web addresses become links.
 - **Notes and links:** the short **notes** and a list of **useful links**, such as a demo script, a recording or a runbook.
-- **Reservations:** upcoming reservations, plus a **Reserve time** button.
+- **Reservations:** upcoming reservations, plus a **Reserve time** button that books right on the launch page, so you stay on it. Your own reservations there have a **Cancel** button.
 
 **Editing (admins):** click **Edit** next to the name on the main page, or **Edit this page** on the launch page. You can change the tagline, console URL, description, notes, details and links. Enter links one per line as `Label | https://...`.
 
