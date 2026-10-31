@@ -96,6 +96,9 @@ def tx_cookie_name(state):
 
 ISO_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2})(?:\.\d+)?)?Z$")
 WRITE_LOCK = threading.Lock()
+# SESSION_KEY is set once in main() — before the server starts accepting requests — so there is
+# no race condition.  It is kept as a module-level name so sign() / unsign() can reach it without
+# passing it through every call site.  Do not read or write it outside main() and the two helpers.
 SESSION_KEY = b""
 
 
@@ -243,6 +246,9 @@ class CosSync:
             self.cond.notify()
 
     def _loop(self):
+        # Retry delay doubles on each consecutive failure, capped at 5 minutes, so a permanent
+        # COS outage doesn't hammer the network every 30 seconds indefinitely.
+        retry_delay = 30
         while True:
             with self.cond:
                 while self.dirty_since is None:
@@ -253,10 +259,12 @@ class CosSync:
                 continue
             try:
                 self.upload()
+                retry_delay = 30   # reset on success
             except StorageError as e:
                 self.last_error = str(e)
-                print("Storage: save failed (%s), will retry in 30 seconds" % e, flush=True)
-                time.sleep(30)
+                print("Storage: save failed (%s), will retry in %d seconds" % (e, retry_delay), flush=True)
+                time.sleep(retry_delay)
+                retry_delay = min(retry_delay * 2, 300)
 
     def _snapshot(self):
         """A consistent copy of the live database, taken with SQLite's online backup."""
@@ -687,9 +695,15 @@ def exchange_code(code, verifier, redirect_uri):
 def user_from_tokens(tokens, nonce):
     """Validate the ID token and build the session user.
 
-    The ID token comes straight from the provider's token endpoint over verified TLS, so per
-    OpenID Connect Core 3.1.3.7 the TLS check stands in for the signature check. Issuer,
-    audience, expiry and nonce are still checked.
+    JWT SIGNATURE CHECK — intentionally skipped:
+    Per OpenID Connect Core §3.1.3.7, when the token is obtained directly from the provider's
+    token endpoint over verified TLS (which urllib does via the system CA bundle), the TLS
+    channel itself provides the same authenticity guarantee as a cryptographic signature check.
+    This is not a security gap: the token never travels through the browser or any third-party
+    hop between the provider and this code.  If you add a proxy or start accepting tokens from
+    an untrusted source, add full JWT signature verification using the provider's JWKS endpoint.
+
+    Claims still verified here: issuer (iss), audience (aud), expiry (exp), and nonce.
     """
     d = discovery()
     id_token = tokens.get("id_token")
@@ -1066,6 +1080,9 @@ class Handler(BaseHTTPRequestHandler):
             if not self.is_admin(user):
                 return self.send_json(403 if user else 401, {"error": "Admins only"})
             return self.env_changes(em.group(1))
+        # Allow unauthenticated CLI access to history when a valid X-Admin-Key header is present.
+        # is_admin(None) returns True only when the header matches ADMIN_KEY (no user required).
+        # This check must come *before* the AUTH_ON gate below, which would otherwise block it.
         if path == "/api/history" and not user and self.is_admin(None):
             return self.history(None, query)
         if AUTH_ON and not user:
@@ -1103,7 +1120,8 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/snapshot":
             # Everything the page needs in one request (settings, the shown day, the next 14 days),
             # to stay well inside Code Engine's free request allowance.
-            q1 = lambda k: query.get(k, [""])[0]
+            def q1(k):
+                return query.get(k, [""])[0]
             try:
                 day = self.bookings_between(q1("day_from"), q1("day_to"))
                 upcoming = self.bookings_between(q1("up_from"), q1("up_to"))
@@ -1264,7 +1282,8 @@ class Handler(BaseHTTPRequestHandler):
         if not see_all:
             where.append("lower(owner) = ?")
             args.append(user["e"].lower())
-        q1 = lambda k: (query.get(k, [""])[0] or "").strip()
+        def q1(k):
+            return (query.get(k, [""])[0] or "").strip()
         try:
             if q1("from"):
                 where.append("start_at >= ?")
@@ -1384,7 +1403,7 @@ def handle_sigterm(signum, frame):
 
 
 def main():
-    global SESSION_KEY
+    global SESSION_KEY  # set once here, before serve_forever(); see comment at declaration
     STORAGE.restore()
     init_db()
     SESSION_KEY = load_session_key()

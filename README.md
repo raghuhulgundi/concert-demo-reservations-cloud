@@ -208,6 +208,7 @@ curl -H "X-Admin-Key: <ADMIN_KEY from .cloud-deploy.env>" "<your app URL>/api/hi
 
 - **Startup:** the app downloads `reservations.db` from the bucket before it accepts any requests. If it can't read the bucket (for example a wrong key or a network problem), it **refuses to start** rather than starting empty and overwriting your data. Code Engine retries automatically.
 - **After each change:** the app waits about 15 seconds, so a burst of changes becomes one upload, then saves the whole database back to the bucket. When Code Engine shuts the app down, it saves any pending change first.
+- **Save retries:** if a save fails (for example a transient network hiccup), the app retries automatically. The retry delay doubles after each consecutive failure — 30 s, 60 s, 120 s, up to a maximum of 5 minutes — so a prolonged COS outage doesn't flood the IBM Cloud API with rapid repeated attempts. The delay resets to 30 s after a successful save.
 - **Daily backup:** each day, the first save also writes `backups/reservations-YYYY-MM-DD.db`.
 - **Single copy:** `max-scale` is 1, so there's only ever one copy of the app writing to the bucket.
 
@@ -245,3 +246,6 @@ curl -X DELETE -H "X-Admin-Key: $ADMIN_KEY" <your app URL>/api/bookings/<id>
 - **Not access control:** the page doesn't stop anyone from logging into Robin or Yoda outside their slot.
 - **Sign-in is for this page only:** Robin and Yoda keep their own Concert Operate logins.
 - **Secrets:** `config.cloud.json` and `.cloud-deploy.env` hold secrets. Both are in `.gitignore` and `.ceignore`, so they're never committed or uploaded with the build. The settings reach the app only through the Code Engine secret.
+- **ID token signature:** per OpenID Connect Core §3.1.3.7, the app does not verify the JWT signature on the ID token. The token is received directly from the provider's token endpoint over verified TLS, which provides the same authenticity guarantee. Issuer, audience, expiry and nonce are still checked. If you ever route the token through a proxy or accept tokens from an untrusted source, add full JWT signature verification using the provider's JWKS endpoint.
+- **Admin key security:** the admin key is stored in plaintext in `.cloud-deploy.env` (mode 0600, in `.gitignore`). Treat it like a password: don't share it, don't paste it into chat, and rotate it by running `./deploy/codeengine.sh` with `ADMIN_KEY=<new-value>`.
+- **CLI access to history:** the `/api/history` endpoint accepts an `X-Admin-Key` header even when sign-in is on and no browser session exists. This is intentional so scripts can export data without a browser login. Protect the admin key accordingly.
