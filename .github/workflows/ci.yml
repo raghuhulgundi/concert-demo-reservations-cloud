@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  lint-and-test:
+    name: Syntax check & smoke test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Syntax check
+        run: python3 -m py_compile server.py && echo "Syntax OK"
+
+      - name: Smoke test — server starts and responds to /healthz
+        run: |
+          # Provide a minimal config so the server doesn't exit on startup.
+          # COS vars are left unset, so storage runs in local-file mode.
+          export RESERVE_CONFIG_JSON='{"environments":[{"id":"robin","name":"Robin","url":"https://example.com"}]}'
+          export PORT=18080
+
+          # Start server in the background
+          python3 server.py &
+          SERVER_PID=$!
+
+          # Wait up to 10 s for the server to be ready
+          for i in $(seq 1 10); do
+            sleep 1
+            if curl -sf http://localhost:18080/healthz > /tmp/healthz.json 2>/dev/null; then
+              break
+            fi
+          done
+
+          # Verify response
+          cat /tmp/healthz.json
+          python3 -c "
+          import json, sys
+          d = json.load(open('/tmp/healthz.json'))
+          assert d.get('ok') is True, 'healthz ok is not true'
+          print('healthz OK — version', d.get('version'))
+          "
+
+          kill $SERVER_PID

@@ -2,6 +2,17 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## Unreleased
+
+- **COS save retries use exponential backoff:** retry delay now doubles after each consecutive
+  failure (30 s → 60 s → … up to 5 min), then resets to 30 s after a successful save. Prevents
+  flooding the IBM Cloud API during a prolonged COS outage.
+- **Code hygiene:** replaced `lambda` helpers with `def` in `do_GET` and `history()`; added
+  explanatory comments for the intentional JWT signature skip, the SESSION_KEY mutable global,
+  and the unauthenticated admin-key history route.
+- **GitHub collaboration setup:** added `CONTRIBUTING.md`, PR template, bug/feature issue
+  templates, and a CI workflow that syntax-checks and smoke-tests the server on every push.
+
 ## v1.1.3 (2026-10-30)
 
 - **Sign-in no longer fails with "Sign-in expired":** each sign-in attempt now keeps its own short-lived cookie, so a second tab or a background request can't overwrite the first attempt's state. Browser requests for `/favicon.ico`, touch icons and `robots.txt` return 404 instead of starting a new sign-in. Only page visits (`/` and `/env/<id>`) redirect to IBMid; other unknown paths return 404.
