@@ -2,6 +2,11 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## v1.1.2 (2026-10-30)
+
+- **Highlighted notice on launch pages:** a new "Important notice" field, edited in the Edit dialog, shows as a bold, highlighted box right below the Launch console button. Use it for the rules people must not miss, such as "Before your demo". A short first line becomes the box's heading.
+- **Bold in details:** wrap text in `**double asterisks**` in the launch page details to make it bold.
+
 ## v1.1.1 (2026-10-30)
 
 - **Reserve on the launch page:** Reserve time on Robin's or Yoda's launch page opens the booking form right there. The form suggests the next free slot and shows what's already booked that day. After booking, you stay on the launch page, with your reservation listed.

@@ -269,7 +269,10 @@
     <label>Notes shown on the card (optional, don't put passwords here)
       <input id="envNotes" maxlength="300" placeholder="Log in with the shared demo user">
     </label>
-    <label>Details for the launch page (what this demo shows, how to run it, who to ask)
+    <label>Important notice (shown bold and highlighted near the top of the launch page)
+      <textarea id="envImportant" rows="4" maxlength="1500" placeholder="Before your demo&#10;- One user at a time. Reserve 30 minutes ahead...&#10;- Don't install your own applications..."></textarea>
+    </label>
+    <label>Details for the launch page (what this demo shows, how to run it, who to ask). Wrap text in **double asterisks** to make it bold.
       <textarea id="envDetails" rows="7" maxlength="5000" placeholder="What this environment is set up to demo&#10;&#10;- Scenario 1: ...&#10;- Scenario 2: ...&#10;&#10;Contact: ..."></textarea>
     </label>
     <label>Useful links, one per line as: Label | https://...
@@ -703,7 +706,7 @@
 
   // ---------- edit environment (admins) ----------
   var EV = { id: null };
-  var FIELD_LABEL = { url: "URL", description: "Description", notes: "Notes", tagline: "Tagline", details: "Details", links: "Links" };
+  var FIELD_LABEL = { url: "URL", description: "Description", notes: "Notes", tagline: "Tagline", details: "Details", links: "Links", important: "Important notice" };
   function shortVal(v) { v = String(v || ""); return v.length > 160 ? v.slice(0, 157) + "..." : v; }
   function linksToText(links) { return (links || []).map(function (l) { return l.label === l.url ? l.url : l.label + " | " + l.url; }).join("\n"); }
   function textToLinks(text) {
@@ -723,6 +726,7 @@
     $("envNotes").value = env.notes || "";
     $("envTagline").value = env.tagline || "";
     $("envDetails").value = env.details || "";
+    $("envImportant").value = env.important || "";
     $("envLinks").value = linksToText(env.links);
     $("envErr").textContent = ""; $("envSave").disabled = false;
     var ul = $("envChanges"); ul.innerHTML = "";
@@ -742,7 +746,7 @@
     ev.preventDefault();
     $("envSave").disabled = true; $("envErr").textContent = "";
     var name = envById(EV.id).name;
-    api("/api/environments/" + EV.id, { method: "PUT", body: JSON.stringify({ url: $("envUrl").value.trim(), description: $("envDesc").value.trim(), notes: $("envNotes").value.trim(), tagline: $("envTagline").value.trim(), details: $("envDetails").value, links: textToLinks($("envLinks").value) }) })
+    api("/api/environments/" + EV.id, { method: "PUT", body: JSON.stringify({ url: $("envUrl").value.trim(), description: $("envDesc").value.trim(), notes: $("envNotes").value.trim(), tagline: $("envTagline").value.trim(), details: $("envDetails").value, important: $("envImportant").value, links: textToLinks($("envLinks").value) }) })
       .then(function (r) {
         $("envDlg").close();
         toast(r.changed.length ? name + " updated. Everyone sees it within 30 seconds." : "No changes");
