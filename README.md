@@ -185,6 +185,21 @@ Click **History** (top right of the schedule) to see:
 curl -H "X-Admin-Key: <ADMIN_KEY from .cloud-deploy.env>" "<your app URL>/api/history?from=2026-11-01T00:00:00Z&env=robin&status=cancelled"
 ```
 
+### Login report (admins)
+
+Every successful sign-in is recorded: who, when, and how they got in (admin, IBM address, config list or partner list). Admins see it under **Login report**, next to **Partner access** in the top right. It shows:
+- **People:** one row per person with their number of logins, first login and last login.
+- **Every login:** each sign-in, newest first.
+- **Filters and CSV:** date range and a name/email search. **Download CSV** saves the filtered list, with local and UTC times.
+
+Only admins can see it. It is stored in the same database as the bookings, so the normal backup covers it. It records sign-ins only, not every page view, and only while sign-in is turned on. Logins made before this version was deployed aren't in the report.
+
+From the command line:
+
+```bash
+curl -H "X-Admin-Key: <ADMIN_KEY from .cloud-deploy.env>" "<your app URL>/api/logins?from=2026-11-01T00:00:00Z&q=jane"
+```
+
 
 ## 6. Cost: staying inside the free tier
 

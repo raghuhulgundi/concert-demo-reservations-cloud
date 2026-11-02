@@ -4,6 +4,7 @@ Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
 ## Unreleased
 
+- **Login report for admins:** every successful sign-in is recorded (who, when, how they got in). Admins open it from the new **Login report** button, with a per-person summary, filters and CSV download. Also available at `/api/logins`.
 - **COS save retries use exponential backoff:** retry delay now doubles after each consecutive
   failure (30 s → 60 s → … up to 5 min), then resets to 30 s after a successful save. Prevents
   flooding the IBM Cloud API during a prolonged COS outage.

@@ -388,9 +388,32 @@ def init_db():
                 added_at TEXT NOT NULL
             )"""
         )
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS login_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                name TEXT,
+                access TEXT,                   -- how they got in: admin, ibm, config or partner
+                logged_in_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_login_time ON login_events(logged_in_at)")
         conn.commit()
     finally:
         conn.close()
+
+
+def record_login(user):
+    """Add one row to the login report each time someone completes sign-in."""
+    access = access_for(user["e"]) or ""
+    with WRITE_LOCK:
+        conn = connect()
+        try:
+            conn.execute("INSERT INTO login_events (email, name, access, logged_in_at) VALUES (?, ?, ?, ?)",
+                         (user["e"].lower(), user["n"], access, fmt_utc(now_utc())))
+            conn.commit()
+        finally:
+            conn.close()
 
 
 # ---------------------------------------------------------------- access list
@@ -972,6 +995,48 @@ class Handler(BaseHTTPRequestHandler):
         self.log_message("%s removed partner %s", user["e"] if user else "admin key", row["value"])
         return self.send_json(200, {"deleted": pid})
 
+    # ---------- login report (admins only) ----------
+    def logins_report(self, query):
+        """Every successful sign-in, newest first, plus one summary line per person."""
+        def q1(k):
+            return (query.get(k, [""])[0] or "").strip()
+        where, args = [], []
+        try:
+            if q1("from"):
+                where.append("logged_in_at >= ?")
+                args.append(fmt_utc(parse_utc(q1("from"))))
+            if q1("to"):
+                where.append("logged_in_at < ?")
+                args.append(fmt_utc(parse_utc(q1("to"))))
+        except ValueError as e:
+            return self.send_json(400, {"error": str(e)})
+        if q1("q"):
+            like = "%" + q1("q").lower().replace("\\", "").replace("%", "").replace("_", "") + "%"
+            where.append("(lower(email) LIKE ? OR lower(coalesce(name,'')) LIKE ?)")
+            args += [like, like]
+        try:
+            limit = max(1, min(5000, int(q1("limit") or 1000)))
+        except ValueError:
+            limit = 1000
+        clause = (" WHERE " + " AND ".join(where)) if where else ""
+        conn = connect()
+        try:
+            total = conn.execute("SELECT count(*) FROM login_events" + clause, args).fetchone()[0]
+            rows = conn.execute("SELECT * FROM login_events" + clause + " ORDER BY id DESC LIMIT ?", args + [limit]).fetchall()
+            people = conn.execute(
+                "SELECT email, max(name) AS name, max(access) AS access, count(*) AS logins, "
+                "min(logged_in_at) AS first_login, max(logged_in_at) AS last_login "
+                "FROM login_events" + clause + " GROUP BY email ORDER BY last_login DESC", args).fetchall()
+        finally:
+            conn.close()
+        return self.send_json(200, {
+            "total": total,
+            "returned": len(rows),
+            "people": [{k: r[k] or "" for k in ("email", "name", "access", "first_login", "last_login")}
+                       | {"logins": r["logins"]} for r in people],
+            "logins": [{k: r[k] or "" for k in ("id", "email", "name", "access", "logged_in_at")} for r in rows],
+        })
+
     def same_origin(self):
         origin = self.headers.get("Origin")
         return not origin or urlparse(origin).netloc == (self.headers.get("Host") or "")
@@ -1044,6 +1109,10 @@ class Handler(BaseHTTPRequestHandler):
                                   "/auth/login", "Try again", [clear_tx])
         sess = sign({"e": user["e"], "n": user["n"], "exp": time.time() + SESSION_HOURS * 3600})
         self.log_message("signed in: %s", user["e"])
+        try:
+            record_login(user)
+        except Exception as e:   # the audit trail must never stop someone signing in
+            self.log_message("couldn't record login for %s: %r", user["e"], e)
         self.redirect(tx.get("next") or "/", [clear_tx, self.cookie_header(SESSION_COOKIE, sess, int(SESSION_HOURS * 3600))])
 
     def auth_logout(self):
@@ -1075,6 +1144,10 @@ class Handler(BaseHTTPRequestHandler):
             if not self.is_admin(user):
                 return self.send_json(403 if user else 401, {"error": "Admins only"})
             return self.partners_list()
+        if path == "/api/logins":
+            if not self.is_admin(user):
+                return self.send_json(403 if user else 401, {"error": "Admins only"})
+            return self.logins_report(query)
         em = re.match(r"^/api/environments/([A-Za-z0-9_-]+)/changes$", path)
         if em:
             if not self.is_admin(user):
