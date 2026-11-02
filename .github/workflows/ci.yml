@@ -23,6 +23,13 @@ jobs:
       - name: Syntax check
         run: python3 -m py_compile server.py && echo "Syntax OK"
 
+      - name: VERSION file matches __version__
+        run: |
+          file_version="$(tr -d '[:space:]' < VERSION)"
+          code_version="$(sed -n 's/^__version__ = "\(.*\)"/\1/p' server.py)"
+          echo "VERSION=$file_version  __version__=$code_version"
+          test "$file_version" = "$code_version"
+
       - name: Smoke test — server starts and responds to /healthz
         run: |
           # Provide a minimal config so the server doesn't exit on startup.

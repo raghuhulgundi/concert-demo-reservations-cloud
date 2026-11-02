@@ -327,7 +327,7 @@
 <dialog id="loginsDlg" class="wide xwide">
   <div class="dlg">
     <h3>Login report</h3>
-    <p class="muted small-text">Every successful sign-in to this page, newest first. Times are in your time zone.</p>
+    <p class="muted small-text">Every sign-in and every page visit, newest first. A sign-in happens when someone logs in with IBMid; a visit is each time they open the main page or a launch page, so it also counts people who stay signed in. Times are in your time zone.</p>
     <form id="lgForm" class="hs-form">
       <label>From <input type="date" id="lgFrom"></label>
       <label>To <input type="date" id="lgTo"></label>
@@ -337,7 +337,7 @@
     <h4>People</h4>
     <div class="pt-table-wrap">
       <table class="pt-table">
-        <thead><tr><th>Name</th><th>Email</th><th>Access</th><th>Logins</th><th>First login</th><th>Last login</th></tr></thead>
+        <thead><tr><th>Name</th><th>Email</th><th>Access</th><th>Logins</th><th>Visits</th><th>First login</th><th>Last login</th><th>Last visit</th></tr></thead>
         <tbody id="lgPeople"></tbody>
       </table>
     </div>
@@ -346,6 +346,13 @@
       <table class="pt-table">
         <thead><tr><th>When</th><th>Name</th><th>Email</th><th>Access</th></tr></thead>
         <tbody id="lgBody"></tbody>
+      </table>
+    </div>
+    <h4>Every page visit</h4>
+    <div class="pt-table-wrap">
+      <table class="pt-table">
+        <thead><tr><th>When</th><th>Name</th><th>Email</th><th>Page</th></tr></thead>
+        <tbody id="lgVisits"></tbody>
       </table>
     </div>
     <div class="foot">
@@ -859,36 +866,56 @@
     p.push("limit=5000");
     return "/api/logins?" + p.join("&");
   }
+  function dayTime(iso8601) { if (!iso8601) return ""; var d = new Date(iso8601); return fmtDay(d) + ", " + fmtTime(d); }
+  function pageLabel(page) {
+    if (page === "/") return "Main page";
+    var m = /^\/env\/(.+)$/.exec(page || "");
+    var env = m && envById(m[1]);
+    return env ? env.name + " launch page" : page;
+  }
   function loadLogins() {
     $("lgErr").textContent = "";
     return api(loginsQuery()).then(function (r) {
-      LG.rows = r.logins;
+      LG.rows = r.logins; LG.visits = r.visits;
       var people = $("lgPeople"); people.innerHTML = "";
-      if (!r.people.length) people.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "6", text: "No logins recorded yet." })]));
+      if (!r.people.length) people.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "8", text: "No logins or visits recorded yet." })]));
       r.people.forEach(function (p) {
         people.appendChild(el("tr", {}, [
           el("td", { text: p.name }), el("td", { class: "wrap", text: p.email }),
-          el("td", { text: ACCESS_LABEL[p.access] || p.access }), el("td", { text: String(p.logins) }),
-          el("td", { class: "muted", text: fmtDay(new Date(p.first_login)) }), el("td", { class: "muted", text: fmtDay(new Date(p.last_login)) })
+          el("td", { text: ACCESS_LABEL[p.access] || p.access }), el("td", { text: String(p.logins) }), el("td", { text: String(p.visits) }),
+          el("td", { class: "muted", text: p.first_login ? fmtDay(new Date(p.first_login)) : "" }),
+          el("td", { class: "muted", text: dayTime(p.last_login) }), el("td", { class: "muted", text: dayTime(p.last_visit) })
+        ]));
+      });
+      var vbody = $("lgVisits"); vbody.innerHTML = "";
+      if (!r.visits.length) vbody.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "4", text: "No page visits match these filters." })]));
+      r.visits.forEach(function (v) {
+        vbody.appendChild(el("tr", {}, [
+          el("td", { text: dayTime(v.visited_at) }), el("td", { text: v.name }),
+          el("td", { class: "wrap", text: v.email }), el("td", { text: pageLabel(v.page) })
         ]));
       });
       var body = $("lgBody"); body.innerHTML = "";
       if (!r.logins.length) body.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "4", text: "No logins match these filters." })]));
       r.logins.forEach(function (l) {
         body.appendChild(el("tr", {}, [
-          el("td", { text: fmtDay(new Date(l.logged_in_at)) }), el("td", { text: l.name }),
+          el("td", { text: fmtDay(new Date(l.logged_in_at)) + ", " + fmtTime(new Date(l.logged_in_at)) }), el("td", { text: l.name }),
           el("td", { class: "wrap", text: l.email }), el("td", { text: ACCESS_LABEL[l.access] || l.access })
         ]));
       });
-      $("lgCount").textContent = (r.total > r.returned ? "Showing newest " + r.returned + " of " + r.total + " logins. Narrow the dates to see older ones. " : r.total + " login" + (r.total === 1 ? ". " : "s. ")) +
+      $("lgCount").textContent = (r.total > r.returned ? "Showing newest " + r.returned + " of " + r.total + " logins. " : r.total + " login" + (r.total === 1 ? ", " : "s, ")) +
+        (r.visit_total > r.visit_returned ? "newest " + r.visit_returned + " of " + r.visit_total + " page visits. Narrow the dates to see older ones. " : r.visit_total + " page visit" + (r.visit_total === 1 ? ", " : "s, ")) +
         r.people.length + " " + (r.people.length === 1 ? "person" : "people") + ".";
     }).catch(function (e) { $("lgErr").textContent = e.message; });
   }
   function openLogins() { $("loginsDlg").showModal(); loadLogins(); }
   function downloadLoginsCsv() {
-    var lines = [["Logged in", "Name", "Email", "Access", "Logged in (UTC)"].join(",")];
+    var lines = [["Type", "When", "Name", "Email", "Access or page", "When (UTC)"].join(",")];
     LG.rows.forEach(function (l) {
-      lines.push([new Date(l.logged_in_at).toLocaleString(), l.name, l.email, ACCESS_LABEL[l.access] || l.access, l.logged_in_at].map(csvCell).join(","));
+      lines.push(["Login", new Date(l.logged_in_at).toLocaleString(), l.name, l.email, ACCESS_LABEL[l.access] || l.access, l.logged_in_at].map(csvCell).join(","));
+    });
+    (LG.visits || []).forEach(function (v) {
+      lines.push(["Page visit", new Date(v.visited_at).toLocaleString(), v.name, v.email, pageLabel(v.page), v.visited_at].map(csvCell).join(","));
     });
     var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
     var a = el("a", { href: URL.createObjectURL(blob), download: "login-report-" + ymd(new Date()) + ".csv" });
