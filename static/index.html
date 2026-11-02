@@ -869,14 +869,14 @@
         people.appendChild(el("tr", {}, [
           el("td", { text: p.name }), el("td", { class: "wrap", text: p.email }),
           el("td", { text: ACCESS_LABEL[p.access] || p.access }), el("td", { text: String(p.logins) }),
-          el("td", { class: "muted", text: fmtDay(new Date(p.first_login)) }), el("td", { class: "muted", text: fmtDay(new Date(p.last_login)) })
+          el("td", { class: "muted", text: fmtDay(new Date(p.first_login)) }), el("td", { class: "muted", text: fmtDay(new Date(p.last_login)) + ", " + fmtTime(new Date(p.last_login)) })
         ]));
       });
       var body = $("lgBody"); body.innerHTML = "";
       if (!r.logins.length) body.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "4", text: "No logins match these filters." })]));
       r.logins.forEach(function (l) {
         body.appendChild(el("tr", {}, [
-          el("td", { text: fmtDay(new Date(l.logged_in_at)) }), el("td", { text: l.name }),
+          el("td", { text: fmtDay(new Date(l.logged_in_at)) + ", " + fmtTime(new Date(l.logged_in_at)) }), el("td", { text: l.name }),
           el("td", { class: "wrap", text: l.email }), el("td", { text: ACCESS_LABEL[l.access] || l.access })
         ]));
       });

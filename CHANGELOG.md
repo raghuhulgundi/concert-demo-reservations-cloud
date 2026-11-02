@@ -2,8 +2,9 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
-## Unreleased
+## v1.2.0 (2026-11-02)
 
+- **Login times:** the login report shows the time of each login and of each person's last login, not only the day.
 - **Login report for admins:** every successful sign-in is recorded (who, when, how they got in). Admins open it from the new **Login report** button, with a per-person summary, filters and CSV download. Also available at `/api/logins`.
 - **COS save retries use exponential backoff:** retry delay now doubles after each consecutive
   failure (30 s → 60 s → … up to 5 min), then resets to 30 s after a successful save. Prevents

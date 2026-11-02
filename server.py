@@ -37,7 +37,7 @@ CONFIG_PATH = os.environ.get("RESERVE_CONFIG", os.path.join(BASE_DIR, "config.js
 DB_PATH = os.environ.get("RESERVE_DB", os.path.join(BASE_DIR, "data", "reservations.db"))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-__version__ = "1.1.3"
+__version__ = "1.2.0"
 EDITION = "code-engine"
 
 if os.environ.get("RESERVE_CONFIG_JSON"):
