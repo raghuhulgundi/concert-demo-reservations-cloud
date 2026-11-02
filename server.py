@@ -37,7 +37,7 @@ CONFIG_PATH = os.environ.get("RESERVE_CONFIG", os.path.join(BASE_DIR, "config.js
 DB_PATH = os.environ.get("RESERVE_DB", os.path.join(BASE_DIR, "data", "reservations.db"))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-__version__ = "1.1.3"
+__version__ = "1.5.0"
 EDITION = "code-engine"
 
 if os.environ.get("RESERVE_CONFIG_JSON"):
@@ -398,6 +398,16 @@ def init_db():
             )"""
         )
         conn.execute("CREATE INDEX IF NOT EXISTS idx_login_time ON login_events(logged_in_at)")
+        conn.execute(
+            """CREATE TABLE IF NOT EXISTS page_visits (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                email TEXT NOT NULL,
+                name TEXT,
+                page TEXT NOT NULL,            -- '/' for the main page, '/env/<id>' for a launch page
+                visited_at TEXT NOT NULL
+            )"""
+        )
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_visit_time ON page_visits(visited_at)")
         conn.commit()
     finally:
         conn.close()
@@ -411,6 +421,18 @@ def record_login(user):
         try:
             conn.execute("INSERT INTO login_events (email, name, access, logged_in_at) VALUES (?, ?, ?, ?)",
                          (user["e"].lower(), user["n"], access, fmt_utc(now_utc())))
+            conn.commit()
+        finally:
+            conn.close()
+
+
+def record_visit(user, page):
+    """Add one row each time a signed-in person loads a page (about 100 bytes per visit)."""
+    with WRITE_LOCK:
+        conn = connect()
+        try:
+            conn.execute("INSERT INTO page_visits (email, name, page, visited_at) VALUES (?, ?, ?, ?)",
+                         (user["e"].lower(), user["n"], page, fmt_utc(now_utc())))
             conn.commit()
         finally:
             conn.close()
@@ -913,7 +935,8 @@ class Handler(BaseHTTPRequestHandler):
         by = user["e"] if user else "admin key"
         when = fmt_utc(now_utc())
         current = {e["id"]: e for e in environments()}[env_id]
-        as_text = lambda f, v: json.dumps(v or []) if f == "links" else (v or "")
+        def as_text(f, v):
+            return json.dumps(v or []) if f == "links" else (v or "")
         changed = [f for f in new if as_text(f, current.get(f)) != as_text(f, new[f])]
         if not changed:
             return self.send_json(200, {"environment": current, "changed": []})
@@ -997,45 +1020,83 @@ class Handler(BaseHTTPRequestHandler):
 
     # ---------- login report (admins only) ----------
     def logins_report(self, query):
-        """Every successful sign-in, newest first, plus one summary line per person."""
+        """Every successful sign-in and every page visit, newest first, plus one summary line per person."""
         def q1(k):
             return (query.get(k, [""])[0] or "").strip()
-        where, args = [], []
-        try:
+
+        def build(time_col):
+            """WHERE clause and arguments for one of the two tables (they differ only in the time column)."""
+            where, args = [], []
             if q1("from"):
-                where.append("logged_in_at >= ?")
+                where.append(time_col + " >= ?")
                 args.append(fmt_utc(parse_utc(q1("from"))))
             if q1("to"):
-                where.append("logged_in_at < ?")
+                where.append(time_col + " < ?")
                 args.append(fmt_utc(parse_utc(q1("to"))))
+            if q1("q"):
+                like = "%" + q1("q").lower().replace("\\", "").replace("%", "").replace("_", "") + "%"
+                where.append("(lower(email) LIKE ? OR lower(coalesce(name,'')) LIKE ?)")
+                args += [like, like]
+            return ((" WHERE " + " AND ".join(where)) if where else ""), args
+
+        try:
+            lg_clause, lg_args = build("logged_in_at")
+            pv_clause, pv_args = build("visited_at")
         except ValueError as e:
             return self.send_json(400, {"error": str(e)})
-        if q1("q"):
-            like = "%" + q1("q").lower().replace("\\", "").replace("%", "").replace("_", "") + "%"
-            where.append("(lower(email) LIKE ? OR lower(coalesce(name,'')) LIKE ?)")
-            args += [like, like]
         try:
             limit = max(1, min(5000, int(q1("limit") or 1000)))
         except ValueError:
             limit = 1000
-        clause = (" WHERE " + " AND ".join(where)) if where else ""
         conn = connect()
         try:
-            total = conn.execute("SELECT count(*) FROM login_events" + clause, args).fetchone()[0]
-            rows = conn.execute("SELECT * FROM login_events" + clause + " ORDER BY id DESC LIMIT ?", args + [limit]).fetchall()
-            people = conn.execute(
-                "SELECT email, max(name) AS name, max(access) AS access, count(*) AS logins, "
+            total = conn.execute("SELECT count(*) FROM login_events" + lg_clause, lg_args).fetchone()[0]
+            rows = conn.execute("SELECT * FROM login_events" + lg_clause + " ORDER BY id DESC LIMIT ?",
+                                lg_args + [limit]).fetchall()
+            logins = conn.execute(
+                "SELECT email, max(name) AS name, max(access) AS access, count(*) AS n, "
                 "min(logged_in_at) AS first_login, max(logged_in_at) AS last_login "
-                "FROM login_events" + clause + " GROUP BY email ORDER BY last_login DESC", args).fetchall()
+                "FROM login_events" + lg_clause + " GROUP BY email", lg_args).fetchall()
+            visit_total = conn.execute("SELECT count(*) FROM page_visits" + pv_clause, pv_args).fetchone()[0]
+            visit_rows = conn.execute("SELECT * FROM page_visits" + pv_clause + " ORDER BY id DESC LIMIT ?",
+                                      pv_args + [limit]).fetchall()
+            visits = conn.execute(
+                "SELECT email, max(name) AS name, count(*) AS n, max(visited_at) AS last_visit "
+                "FROM page_visits" + pv_clause + " GROUP BY email", pv_args).fetchall()
         finally:
             conn.close()
+        # One line per person, from either table: someone whose session started before they were
+        # tracked can have visits but no recorded login.
+        by_email = {}
+        for r in logins:
+            by_email[r["email"]] = {"email": r["email"], "name": r["name"] or "", "access": r["access"] or "",
+                                    "logins": r["n"], "first_login": r["first_login"] or "",
+                                    "last_login": r["last_login"] or "", "visits": 0, "last_visit": ""}
+        for r in visits:
+            p = by_email.setdefault(r["email"], {"email": r["email"], "name": r["name"] or "", "access": "",
+                                                 "logins": 0, "first_login": "", "last_login": "",
+                                                 "visits": 0, "last_visit": ""})
+            p["visits"] = r["n"]
+            p["last_visit"] = r["last_visit"] or ""
+        people = sorted(by_email.values(), key=lambda p: max(p["last_login"], p["last_visit"]), reverse=True)
         return self.send_json(200, {
             "total": total,
             "returned": len(rows),
-            "people": [{k: r[k] or "" for k in ("email", "name", "access", "first_login", "last_login")}
-                       | {"logins": r["logins"]} for r in people],
+            "visit_total": visit_total,
+            "visit_returned": len(visit_rows),
+            "people": people,
             "logins": [{k: r[k] or "" for k in ("id", "email", "name", "access", "logged_in_at")} for r in rows],
+            "visits": [{k: r[k] or "" for k in ("id", "email", "name", "page", "visited_at")} for r in visit_rows],
         })
+
+    def track_visit(self, user, page):
+        """Record a page load for the login report. Never lets a recording problem break the page."""
+        if not user or self.command != "GET":   # HEAD checks and signed-out requests don't count
+            return
+        try:
+            record_visit(user, page)
+        except Exception as e:
+            self.log_message("couldn't record visit for %s: %r", user["e"], e)
 
     def same_origin(self):
         origin = self.headers.get("Origin")
@@ -1166,11 +1227,13 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_body(404, b"Not found", "text/plain")
 
         if path in ("/", "/index.html"):
+            self.track_visit(user, "/")
             return self.send_static("index.html", "text/html; charset=utf-8")
         m_env = re.match(r"^/env/([A-Za-z0-9_-]+)/?$", path)
         if m_env:
             if m_env.group(1) not in ENVS:
                 return self.redirect("/")
+            self.track_visit(user, "/env/" + m_env.group(1))
             return self.send_static("env.html", "text/html; charset=utf-8")
         if path == "/api/config":
             return self.send_json(200, public_config())

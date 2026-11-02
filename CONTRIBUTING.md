@@ -117,7 +117,8 @@ This project follows [Semantic Versioning](https://semver.org/):
 
 1. Add a bullet under `## Unreleased` in `CHANGELOG.md`.
 2. If you are cutting a release, rename `## Unreleased` to `## vX.Y.Z (YYYY-MM-DD)` and
-   update the `VERSION` file and the `__version__` string in `server.py`.
+   update the `VERSION` file and the `__version__` string in `server.py`. They must match; CI checks it.
+   Version numbers are shared with the VM / OpenShift edition ([concert-demo-reservations](https://github.com/raghuhulgundi/concert-demo-reservations)): a feature added there should get the same version here.
 3. Tag the release after merging: `git tag -a vX.Y.Z -m "Release vX.Y.Z" && git push origin vX.Y.Z`
 
 ---
@@ -127,6 +128,7 @@ This project follows [Semantic Versioning](https://semver.org/):
 - **Standard library only** — do not add third-party dependencies.
 - Follow existing style: 4-space indent, single quotes for strings, `%`-formatting for log messages.
 - Use `def` instead of `lambda` for named helpers.
+- Avoid syntax newer than Python 3.6 (`dict | dict`, walrus, `match`, `removeprefix`), so the code stays identical to the VM edition.
 - Add docstrings to new public functions; add inline comments for non-obvious decisions.
 - All user input must go through `clean_text()`, `clean_multiline()`, or `clean_links()`.
 - All mutating database operations must hold `WRITE_LOCK`.

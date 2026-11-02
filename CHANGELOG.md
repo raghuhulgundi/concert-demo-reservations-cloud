@@ -2,17 +2,16 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
-## Unreleased
+## v1.5.0 (2026-11-02)
 
-- **Login report for admins:** every successful sign-in is recorded (who, when, how they got in). Admins open it from the new **Login report** button, with a per-person summary, filters and CSV download. Also available at `/api/logins`.
-- **COS save retries use exponential backoff:** retry delay now doubles after each consecutive
-  failure (30 s → 60 s → … up to 5 min), then resets to 30 s after a successful save. Prevents
-  flooding the IBM Cloud API during a prolonged COS outage.
-- **Code hygiene:** replaced `lambda` helpers with `def` in `do_GET` and `history()`; added
-  explanatory comments for the intentional JWT signature skip, the SESSION_KEY mutable global,
-  and the unauthenticated admin-key history route.
-- **GitHub collaboration setup:** added `CONTRIBUTING.md`, PR template, bug/feature issue
-  templates, and a CI workflow that syntax-checks and smoke-tests the server on every push.
+Version numbers now match the VM / OpenShift edition ([concert-demo-reservations](https://github.com/raghuhulgundi/concert-demo-reservations)), so the same number means the same features in both. Earlier cloud releases keep their old numbers below: cloud v1.1.2 and v1.1.3 are the VM edition's v1.2.2 and v1.3.1.
+
+- **Login report for admins:** every successful sign-in is recorded (who, when, how they got in). Admins open it from the new **Login report** button, with a per-person summary, filters and CSV download. Also available at `/api/logins`. Times show the time of day as well as the date.
+- **Login report now counts page visits:** until now only a fresh IBMid sign-in was recorded, so someone who stayed signed in and kept opening the page showed up once. Each load of the main page or a launch page is now recorded too, with a Visits and Last visit column per person, an "Every page visit" table, and the visits in the CSV. Stored in a new `page_visits` table, about 100 bytes per visit, and saved to Object Storage with the rest of the database. Background refreshes, health checks and signed-out requests are not counted.
+- **Version file fixed:** `VERSION` said 1.1.2 while the app reported 1.1.3. They now match, and CI checks that they stay in sync.
+- **COS save retries use exponential backoff:** retry delay now doubles after each consecutive failure (30 s, 60 s, up to 5 min), then resets to 30 s after a successful save. Prevents flooding the IBM Cloud API during a prolonged COS outage.
+- **Code hygiene:** replaced `lambda` helpers with `def`, removed a `dict | dict` merge that needs Python 3.9, and added comments for the ID token signature check, the SESSION_KEY global and the admin-key route for `/api/history`.
+- **GitHub collaboration setup:** added `CONTRIBUTING.md`, a PR template, bug and feature issue templates, and a CI workflow that syntax-checks and smoke-tests the server on every push.
 
 ## v1.1.3 (2026-10-30)
 
