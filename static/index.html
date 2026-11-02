@@ -150,6 +150,7 @@
     <span>Signed in as <b id="whoName"></b></span>
     <span><span id="whoEmail"></span> &middot; <a href="/auth/logout">Sign out</a></span>
     <button type="button" class="btn ghost small" id="partnersBtn" hidden>Partner access</button>
+    <button type="button" class="btn ghost small" id="loginsBtn" hidden>Login report</button>
   </div>
 </header>
 
@@ -319,6 +320,38 @@
       <span class="muted small-text" id="hsCount" style="margin-right:auto"></span>
       <button type="button" class="btn ghost" id="hsCsv">Download CSV</button>
       <button type="button" class="btn ghost" id="hsClose">Close</button>
+    </div>
+  </div>
+</dialog>
+
+<dialog id="loginsDlg" class="wide xwide">
+  <div class="dlg">
+    <h3>Login report</h3>
+    <p class="muted small-text">Every successful sign-in to this page, newest first. Times are in your time zone.</p>
+    <form id="lgForm" class="hs-form">
+      <label>From <input type="date" id="lgFrom"></label>
+      <label>To <input type="date" id="lgTo"></label>
+      <label>Search <input id="lgQ" placeholder="Name or email"></label>
+    </form>
+    <p class="err" id="lgErr"></p>
+    <h4>People</h4>
+    <div class="pt-table-wrap">
+      <table class="pt-table">
+        <thead><tr><th>Name</th><th>Email</th><th>Access</th><th>Logins</th><th>First login</th><th>Last login</th></tr></thead>
+        <tbody id="lgPeople"></tbody>
+      </table>
+    </div>
+    <h4>Every login</h4>
+    <div class="pt-table-wrap">
+      <table class="pt-table">
+        <thead><tr><th>When</th><th>Name</th><th>Email</th><th>Access</th></tr></thead>
+        <tbody id="lgBody"></tbody>
+      </table>
+    </div>
+    <div class="foot">
+      <span class="muted small-text" id="lgCount" style="margin-right:auto"></span>
+      <button type="button" class="btn ghost" id="lgCsv">Download CSV</button>
+      <button type="button" class="btn ghost" id="lgClose">Close</button>
     </div>
   </div>
 </dialog>
@@ -815,12 +848,59 @@
     document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
   }
 
+  // ---------- login report (admins) ----------
+  var LG = { rows: [], timer: null };
+  var ACCESS_LABEL = { admin: "Admin", ibm: "IBM", config: "Config list", partner: "Partner" };
+  function loginsQuery() {
+    var p = [];
+    if ($("lgFrom").value) p.push("from=" + iso(fromYmd($("lgFrom").value)));
+    if ($("lgTo").value) p.push("to=" + iso(addDays(fromYmd($("lgTo").value), 1)));
+    if ($("lgQ").value.trim()) p.push("q=" + encodeURIComponent($("lgQ").value.trim()));
+    p.push("limit=5000");
+    return "/api/logins?" + p.join("&");
+  }
+  function loadLogins() {
+    $("lgErr").textContent = "";
+    return api(loginsQuery()).then(function (r) {
+      LG.rows = r.logins;
+      var people = $("lgPeople"); people.innerHTML = "";
+      if (!r.people.length) people.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "6", text: "No logins recorded yet." })]));
+      r.people.forEach(function (p) {
+        people.appendChild(el("tr", {}, [
+          el("td", { text: p.name }), el("td", { class: "wrap", text: p.email }),
+          el("td", { text: ACCESS_LABEL[p.access] || p.access }), el("td", { text: String(p.logins) }),
+          el("td", { class: "muted", text: fmtDay(new Date(p.first_login)) }), el("td", { class: "muted", text: fmtDay(new Date(p.last_login)) })
+        ]));
+      });
+      var body = $("lgBody"); body.innerHTML = "";
+      if (!r.logins.length) body.appendChild(el("tr", {}, [el("td", { class: "empty", colspan: "4", text: "No logins match these filters." })]));
+      r.logins.forEach(function (l) {
+        body.appendChild(el("tr", {}, [
+          el("td", { text: fmtDay(new Date(l.logged_in_at)) }), el("td", { text: l.name }),
+          el("td", { class: "wrap", text: l.email }), el("td", { text: ACCESS_LABEL[l.access] || l.access })
+        ]));
+      });
+      $("lgCount").textContent = (r.total > r.returned ? "Showing newest " + r.returned + " of " + r.total + " logins. Narrow the dates to see older ones. " : r.total + " login" + (r.total === 1 ? ". " : "s. ")) +
+        r.people.length + " " + (r.people.length === 1 ? "person" : "people") + ".";
+    }).catch(function (e) { $("lgErr").textContent = e.message; });
+  }
+  function openLogins() { $("loginsDlg").showModal(); loadLogins(); }
+  function downloadLoginsCsv() {
+    var lines = [["Logged in", "Name", "Email", "Access", "Logged in (UTC)"].join(",")];
+    LG.rows.forEach(function (l) {
+      lines.push([new Date(l.logged_in_at).toLocaleString(), l.name, l.email, ACCESS_LABEL[l.access] || l.access, l.logged_in_at].map(csvCell).join(","));
+    });
+    var blob = new Blob(["﻿" + lines.join("\r\n")], { type: "text/csv;charset=utf-8" });
+    var a = el("a", { href: URL.createObjectURL(blob), download: "login-report-" + ymd(new Date()) + ".csv" });
+    document.body.appendChild(a); a.click(); setTimeout(function () { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+  }
+
   // ---------- auto refresh ----------
   // Refreshes only while the tab is visible and someone has used the page recently. An idle or
   // background tab makes no requests, so Code Engine can scale the app to zero (and stay free).
   var R = { lastActive: Date.now(), timer: null, paused: false };
   function anyDialogOpen() {
-    return ["bookDlg", "infoDlg", "partnersDlg", "historyDlg", "envDlg"].some(function (id) { return $(id).open; });
+    return ["bookDlg", "infoDlg", "partnersDlg", "historyDlg", "envDlg", "loginsDlg"].some(function (id) { return $(id).open; });
   }
   function refreshEveryMs() { return Math.max(15, (S.cfg && S.cfg.refresh_seconds) || 60) * 1000; }
   function idleLimitMs() { return Math.max(1, (S.cfg && S.cfg.idle_pause_minutes) || 15) * 60000; }
@@ -866,6 +946,7 @@
         $("whoName").textContent = S.me.name + (S.me.admin ? " (admin)" : "");
         $("whoEmail").textContent = S.me.email;
         $("partnersBtn").hidden = !S.me.admin;
+        $("loginsBtn").hidden = !S.me.admin;
       }
       document.title = cfg.title || document.title;
       $("title").textContent = cfg.title || "Demo Environments";
@@ -890,6 +971,12 @@
     $("infoClose").onclick = function () { $("infoDlg").close(); };
     $("infoDelete").onclick = deleteInfo;
     $("partnersBtn").onclick = openPartners;
+    $("loginsBtn").onclick = openLogins;
+    $("lgClose").onclick = function () { $("loginsDlg").close(); };
+    $("lgCsv").onclick = downloadLoginsCsv;
+    ["lgFrom", "lgTo"].forEach(function (id) { $(id).addEventListener("change", loadLogins); });
+    $("lgQ").addEventListener("input", function () { clearTimeout(LG.timer); LG.timer = setTimeout(loadLogins, 300); });
+    $("lgForm").addEventListener("submit", function (e) { e.preventDefault(); loadLogins(); });
     $("historyBtn").onclick = openHistory;
     $("envForm").addEventListener("submit", saveEnv);
     $("envCancel").onclick = function () { $("envDlg").close(); };
