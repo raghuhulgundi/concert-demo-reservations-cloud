@@ -37,7 +37,7 @@ CONFIG_PATH = os.environ.get("RESERVE_CONFIG", os.path.join(BASE_DIR, "config.js
 DB_PATH = os.environ.get("RESERVE_DB", os.path.join(BASE_DIR, "data", "reservations.db"))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
-__version__ = "1.5.1"
+__version__ = "1.6.0"
 EDITION = "code-engine"
 
 if os.environ.get("RESERVE_CONFIG_JSON"):
@@ -363,7 +363,7 @@ def init_db():
             )"""
         )
         env_cols = [r[1] for r in conn.execute("PRAGMA table_info(env_settings)").fetchall()]
-        for col in ("tagline", "details", "links", "important"):
+        for col in ("tagline", "details", "links", "important", "enabled"):
             if col not in env_cols:
                 conn.execute("ALTER TABLE env_settings ADD COLUMN %s TEXT" % col)
         conn.execute(
@@ -536,7 +536,7 @@ def history_row(row, now):
     }
 
 
-EDITABLE_ENV_FIELDS = ("url", "description", "notes", "tagline", "details", "links", "important")
+EDITABLE_ENV_FIELDS = ("url", "description", "notes", "tagline", "details", "links", "important", "enabled")
 MAX_LINKS = 12
 
 
@@ -588,23 +588,35 @@ def environments():
     for e in CONFIG["environments"]:
         item = {k: e.get(k, "") for k in ("id", "name", "description", "url", "notes", "color", "tagline", "details", "important")}
         item["links"] = e.get("links") if isinstance(e.get("links"), list) else []
+        item["enabled"] = truthy(e.get("enabled", True))   # config.json default; admins can switch it on the page
         o = overrides.get(e["id"])
         if o:
             for f in EDITABLE_ENV_FIELDS:
                 if o[f] is not None:
-                    item[f] = links_from_text(o[f]) if f == "links" else o[f]
+                    if f == "links":
+                        item[f] = links_from_text(o[f])
+                    elif f == "enabled":
+                        item[f] = (o[f] == "shown")
+                    else:
+                        item[f] = o[f]
             item["updated_by"] = o["updated_by"] or ""
             item["updated_at"] = o["updated_at"] or ""
         out.append(item)
     return out
 
 
-def public_config():
+def public_config(is_admin=False):
     keys = ("title", "subtitle", "slot_minutes", "day_start_hour", "day_end_hour", "max_booking_hours",
             "refresh_seconds", "idle_pause_minutes")
     cfg = {k: CONFIG.get(k) for k in keys}
-    cfg["environments"] = environments()
+    # A switched-off environment is hidden from everyone except admins, who see it marked so they can switch it back on.
+    cfg["environments"] = [e for e in environments() if e["enabled"] or is_admin]
     return cfg
+
+
+def hidden_env_ids():
+    """Environments an admin has switched off."""
+    return set(e["id"] for e in environments() if not e["enabled"])
 
 
 URL_RE = re.compile(r"^https?://[^\s/$.?#][^\s]*$", re.IGNORECASE)
@@ -928,6 +940,9 @@ class Handler(BaseHTTPRequestHandler):
                 new["links"] = clean_links(data.get("links"))
             if "important" in data:
                 new["important"] = clean_multiline(data.get("important"), 1500)
+            if "enabled" in data:
+                flag = data.get("enabled")
+                new["enabled"] = flag if isinstance(flag, bool) else truthy(flag)
             if not new:
                 raise ValueError("Nothing to change")
         except (ValueError, json.JSONDecodeError) as e:
@@ -936,6 +951,8 @@ class Handler(BaseHTTPRequestHandler):
         when = fmt_utc(now_utc())
         current = {e["id"]: e for e in environments()}[env_id]
         def as_text(f, v):
+            if f == "enabled":
+                return "shown" if v else "hidden"
             return json.dumps(v or []) if f == "links" else (v or "")
         changed = [f for f in new if as_text(f, current.get(f)) != as_text(f, new[f])]
         if not changed:
@@ -1231,12 +1248,12 @@ class Handler(BaseHTTPRequestHandler):
             return self.send_static("index.html", "text/html; charset=utf-8")
         m_env = re.match(r"^/env/([A-Za-z0-9_-]+)/?$", path)
         if m_env:
-            if m_env.group(1) not in ENVS:
+            if m_env.group(1) not in ENVS or (m_env.group(1) in hidden_env_ids() and not self.is_admin(user)):
                 return self.redirect("/")
             self.track_visit(user, "/env/" + m_env.group(1))
             return self.send_static("env.html", "text/html; charset=utf-8")
         if path == "/api/config":
-            return self.send_json(200, public_config())
+            return self.send_json(200, public_config(self.is_admin(user)))
         if path == "/api/history":
             return self.history(user, query)
         if path == "/api/me":
@@ -1252,7 +1269,9 @@ class Handler(BaseHTTPRequestHandler):
                 rows = self.bookings_between(query.get("from", [""])[0], query.get("to", [""])[0])
             except ValueError as e:
                 return self.send_json(400, {"error": str(e)})
-            return self.send_json(200, {"bookings": [public_booking(r, user) for r in rows], "now": fmt_utc(now_utc())})
+            hidden = set() if self.is_admin(user) else hidden_env_ids()
+            return self.send_json(200, {"bookings": [public_booking(r, user) for r in rows if r["env"] not in hidden],
+                                        "now": fmt_utc(now_utc())})
         if path == "/api/snapshot":
             # Everything the page needs in one request (settings, the shown day, the next 14 days),
             # to stay well inside Code Engine's free request allowance.
@@ -1263,10 +1282,12 @@ class Handler(BaseHTTPRequestHandler):
                 upcoming = self.bookings_between(q1("up_from"), q1("up_to"))
             except ValueError as e:
                 return self.send_json(400, {"error": str(e)})
+            is_admin = self.is_admin(user)
+            hidden = set() if is_admin else hidden_env_ids()
             return self.send_json(200, {
-                "config": public_config(),
-                "day": [public_booking(r, user) for r in day],
-                "upcoming": [public_booking(r, user) for r in upcoming],
+                "config": public_config(is_admin),
+                "day": [public_booking(r, user) for r in day if r["env"] not in hidden],
+                "upcoming": [public_booking(r, user) for r in upcoming if r["env"] not in hidden],
                 "now": fmt_utc(now_utc()),
             })
         return self.send_json(404, {"error": "Not found"})
@@ -1290,7 +1311,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             data = self.read_json()
             env = data.get("env")
-            if env not in ENVS:
+            if env not in ENVS or (env in hidden_env_ids() and not self.is_admin(user)):
                 raise ValueError("Unknown environment")
             start = parse_utc(data.get("start"))
             end = parse_utc(data.get("end"))

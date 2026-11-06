@@ -2,6 +2,11 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## v1.6.0 (2026-11-06)
+
+- **Show or hide an environment from the page:** admins get a **Show this environment to everyone** checkbox in the Edit dialog. While it is off, other people don't see the card or column, can't open its launch page and can't book it. Admins still see it, dimmed with a **Hidden** tag. Reservations are kept, and each change is logged. No redeploy needed.
+- **New Bear environment:** a red development environment, tagline "CAUTION - Development version - Not everything is tested to work". The example config starts it hidden (`"enabled": false`). Environments themselves are still defined in `config.cloud.json`, so adding a new one needs a one-time redeploy (`./deploy/codeengine.sh`).
+
 ## v1.5.1 (2026-11-06)
 
 - **Close button at the top right:** Login report, Partner access and Reservation history now have a × in a header that stays in view, so you no longer scroll to the bottom to close them. The Close button at the bottom is still there.

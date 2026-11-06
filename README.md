@@ -144,6 +144,22 @@ Each environment has its own **launch page**, at `/env/robin` and `/env/yoda`. T
 
 **Editing (admins):** click **Edit** next to the name on the main page, or **Edit this page** on the launch page. You can change the tagline, console URL, description, notes, details and links. Enter links one per line as `Label | https://...`. In the details, wrap words in `**double asterisks**` to make them bold.
 
+### Show or hide an environment (no redeploy)
+
+Any environment in `config.json` can be switched on or off from the page, which is handy for a development environment such as Bear or for maintenance on Robin or Yoda.
+
+1. Sign in as an admin and click **Edit** on the environment's card.
+2. Tick or untick **Show this environment to everyone**, then click **Save**.
+
+While it is off:
+- **Everyone else** doesn't see its card or its column, can't open its launch page and can't book it.
+- **Admins** still see it, dimmed with a **Hidden** tag, so they can switch it back on or reserve time on it.
+- **Existing reservations** are kept and still appear in History. Hiding only stops new bookings and removes it from view.
+
+The change takes effect within 30 seconds and is recorded in the change history. To start an environment as hidden, add `"enabled": false` to its entry in `config.json` (the example config does this for Bear). The switch on the page then overrides that value.
+
+Adding a brand-new environment still means adding it to `config.cloud.json` and running `./deploy/codeengine.sh` once. After that, showing and hiding it needs no redeploy.
+
 ### Change the console URL
 
 When a cluster is rebuilt or moved, update its link from the page. There's no need to redeploy.
