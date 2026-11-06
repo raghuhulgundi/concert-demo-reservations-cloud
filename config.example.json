@@ -50,6 +50,19 @@
       "details": "",
       "links": [],
       "important": ""
+    },
+    {
+      "id": "bear",
+      "name": "Bear",
+      "tagline": "CAUTION - Development version - Not everything is tested to work",
+      "description": "Concert Operate development environment",
+      "url": "https://REPLACE-with-bear-concert-operate-url",
+      "notes": "",
+      "color": "#da1e28",
+      "details": "",
+      "links": [],
+      "important": "",
+      "enabled": false
     }
   ]
 }

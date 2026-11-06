@@ -21,6 +21,10 @@
   .me { font-size: 13px; color: var(--muted); display: flex; flex-direction: column; gap: 4px; }
   .refresh-label { font-size: 12px; }
   .refresh-label.paused { color: #8a5300; }
+  .card.off { opacity: .6; border-top-style: dashed; }
+  .off-tag { display: inline-block; margin-left: 10px; padding: 2px 8px; border-radius: 4px; background: #e0e0e0; color: #393939; font-size: 12px; font-weight: 600; vertical-align: middle; }
+  .col-head.off span { opacity: .6; }
+  .check { flex-direction: row !important; align-items: center; gap: 8px !important; font-size: 14px !important; color: var(--ink) !important; }
   .tagline { margin: 4px 0 0; font-size: 15px; font-weight: 600; color: var(--env, var(--ink)); }
   textarea { font: inherit; padding: 8px 10px; border: 1px solid #c6c6c6; border-radius: 4px; resize: vertical; }
   #envDlg { width: min(560px, 94vw); }
@@ -262,6 +266,7 @@
 <dialog id="envDlg">
   <form class="dlg" id="envForm" method="dialog">
     <h3 id="envTitle">Edit environment</h3>
+    <label class="check"><input type="checkbox" id="envEnabled"> Show this environment to everyone (untick to hide it; admins still see it)</label>
     <label>Tagline (short line under the name, for example "App centric demo")
       <input id="envTagline" maxlength="80" placeholder="App centric demo">
     </label>
@@ -482,10 +487,10 @@
       var open = el("a", { class: "btn primary", href: "/env/" + encodeURIComponent(env.id), text: "Open " + env.name, title: "Demo details, notes, links and the console" });
       var book = el("button", { class: "btn ghost", text: cur ? "Reserve a later slot" : "Reserve now", onclick: function () { quickBook(env); } });
 
-      wrap.appendChild(el("article", { class: "card", style: "--env:" + env.color }, [
+      wrap.appendChild(el("article", { class: "card" + (env.enabled === false ? " off" : ""), style: "--env:" + env.color }, [
         el("div", { class: "card-head" }, [
           el("div", {}, [
-            el("h3", {}, [env.name, S.me.admin ? el("button", { class: "edit-link", type: "button", text: "Edit", title: "Change the tagline, URL, notes, details or links", onclick: function () { openEnvEdit(env.id); } }) : null]),
+            el("h3", {}, [env.name, env.enabled === false ? el("span", { class: "off-tag", text: "Hidden", title: "Only admins see this. Edit it to show it to everyone." }) : null, S.me.admin ? el("button", { class: "edit-link", type: "button", text: "Edit", title: "Change the tagline, URL, notes, details or links", onclick: function () { openEnvEdit(env.id); } }) : null]),
             env.tagline ? el("p", { class: "tagline", text: env.tagline }) : null,
             el("p", { class: "desc muted", text: env.description || "" })
           ]),
@@ -510,7 +515,7 @@
     g.appendChild(el("div"));
     S.envs.forEach(function (env) {
       var link = el("a", { href: "/env/" + encodeURIComponent(env.id), text: "Details" });
-      g.appendChild(el("div", { class: "col-head", style: "--env:" + env.color }, [el("span", { text: env.name }), link]));
+      g.appendChild(el("div", { class: "col-head" + (env.enabled === false ? " off" : ""), style: "--env:" + env.color }, [el("span", { text: env.name + (env.enabled === false ? " (hidden)" : "") }), link]));
     });
 
     var times = el("div", { class: "times" });
@@ -632,7 +637,7 @@
   function openBook(envId, start, minutes) {
     var env = envById(envId);
     var envSel = $("bkEnv"); envSel.innerHTML = "";
-    S.envs.forEach(function (e) { envSel.appendChild(el("option", { value: e.id, text: e.name })); });
+    S.envs.forEach(function (e) { if (e.enabled !== false || e.id === envId) envSel.appendChild(el("option", { value: e.id, text: e.name })); });
     envSel.value = envId;
     $("bookForm").style.setProperty("--env", env.color);
     $("bookTitle").textContent = "Reserve " + env.name;
@@ -750,7 +755,7 @@
 
   // ---------- edit environment (admins) ----------
   var EV = { id: null };
-  var FIELD_LABEL = { url: "URL", description: "Description", notes: "Notes", tagline: "Tagline", details: "Details", links: "Links", important: "Important notice" };
+  var FIELD_LABEL = { url: "URL", description: "Description", notes: "Notes", tagline: "Tagline", details: "Details", links: "Links", important: "Important notice", enabled: "Visibility" };
   function shortVal(v) { v = String(v || ""); return v.length > 160 ? v.slice(0, 157) + "..." : v; }
   function linksToText(links) { return (links || []).map(function (l) { return l.label === l.url ? l.url : l.label + " | " + l.url; }).join("\n"); }
   function textToLinks(text) {
@@ -769,6 +774,7 @@
     $("envDesc").value = env.description || "";
     $("envNotes").value = env.notes || "";
     $("envTagline").value = env.tagline || "";
+    $("envEnabled").checked = env.enabled !== false;
     $("envDetails").value = env.details || "";
     $("envImportant").value = env.important || "";
     $("envLinks").value = linksToText(env.links);
@@ -790,7 +796,7 @@
     ev.preventDefault();
     $("envSave").disabled = true; $("envErr").textContent = "";
     var name = envById(EV.id).name;
-    api("/api/environments/" + EV.id, { method: "PUT", body: JSON.stringify({ url: $("envUrl").value.trim(), description: $("envDesc").value.trim(), notes: $("envNotes").value.trim(), tagline: $("envTagline").value.trim(), details: $("envDetails").value, important: $("envImportant").value, links: textToLinks($("envLinks").value) }) })
+    api("/api/environments/" + EV.id, { method: "PUT", body: JSON.stringify({ url: $("envUrl").value.trim(), description: $("envDesc").value.trim(), notes: $("envNotes").value.trim(), tagline: $("envTagline").value.trim(), enabled: $("envEnabled").checked, details: $("envDetails").value, important: $("envImportant").value, links: textToLinks($("envLinks").value) }) })
       .then(function (r) {
         $("envDlg").close();
         toast(r.changed.length ? name + " updated. Everyone sees it within 30 seconds." : "No changes");
