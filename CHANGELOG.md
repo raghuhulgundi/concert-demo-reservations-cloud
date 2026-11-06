@@ -2,6 +2,11 @@
 
 Versions follow `MAJOR.MINOR.PATCH`. Each release is tagged in git as `vX.Y.Z`.
 
+## v1.5.1 (2026-11-06)
+
+- **Close button at the top right:** Login report, Partner access and Reservation history now have a × in a header that stays in view, so you no longer scroll to the bottom to close them. The Close button at the bottom is still there.
+- **Login report opens on today:** the dates start at the current day, so the report stays short as logins and visits build up. Change the dates or clear them to see older activity.
+
 ## v1.5.0 (2026-11-02)
 
 Version numbers now match the VM / OpenShift edition ([concert-demo-reservations](https://github.com/raghuhulgundi/concert-demo-reservations)), so the same number means the same features in both. Earlier cloud releases keep their old numbers below: cloud v1.1.2 and v1.1.3 are the VM edition's v1.2.2 and v1.3.1.

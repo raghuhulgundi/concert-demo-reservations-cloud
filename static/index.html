@@ -48,6 +48,10 @@
   .always { font-size: 13px; color: var(--muted); }
   .always ul { margin: 6px 0 0; padding-left: 18px; }
   dialog.xwide { width: min(1100px, 96vw); }
+  .dlg-head { position: sticky; top: 0; z-index: 2; display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: -10px -24px 0; padding: 10px 24px 8px; background: #fff; }
+  .dlg-x { font: inherit; font-size: 22px; line-height: 1; width: 34px; height: 34px; border: 1px solid #c6c6c6; border-radius: 4px; background: #fff; color: var(--muted); cursor: pointer; }
+  .dlg-x:hover { color: var(--ink); border-color: var(--ink); }
+  #loginsDlg .pt-table-wrap { max-height: 28vh; }
   .hs-form { display: grid; grid-template-columns: 1fr 1fr 1fr 1.3fr 1.6fr; gap: 10px; }
   .hs-form label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; color: var(--muted); }
   .hs-form input, .hs-form select { width: 100%; }
@@ -224,7 +228,7 @@
 
 <dialog id="partnersDlg" class="wide">
   <div class="dlg">
-    <h3>Partner access</h3>
+    <div class="dlg-head"><h3>Partner access</h3><button type="button" class="dlg-x" id="ptX" aria-label="Close" title="Close">&times;</button></div>
     <p class="muted small-text">IBM addresses can always sign in. Add partners here by individual email address, or by company domain to let everyone at that company in. Changes take effect immediately.</p>
     <form id="ptForm" class="pt-form">
       <label>Email or company domain
@@ -293,7 +297,7 @@
 
 <dialog id="historyDlg" class="wide xwide">
   <div class="dlg">
-    <h3 id="hsTitle">Reservation history</h3>
+    <div class="dlg-head"><h3 id="hsTitle">Reservation history</h3><button type="button" class="dlg-x" id="hsX" aria-label="Close" title="Close">&times;</button></div>
     <form id="hsForm" class="hs-form">
       <label>From <input type="date" id="hsFrom"></label>
       <label>To <input type="date" id="hsTo"></label>
@@ -326,8 +330,8 @@
 
 <dialog id="loginsDlg" class="wide xwide">
   <div class="dlg">
-    <h3>Login report</h3>
-    <p class="muted small-text">Every sign-in and every page visit, newest first. A sign-in happens when someone logs in with IBMid; a visit is each time they open the main page or a launch page, so it also counts people who stay signed in. Times are in your time zone.</p>
+    <div class="dlg-head"><h3>Login report</h3><button type="button" class="dlg-x" id="lgX" aria-label="Close" title="Close">&times;</button></div>
+    <p class="muted small-text">Every sign-in and every page visit, newest first. A sign-in happens when someone logs in with IBMid; a visit is each time they open the main page or a launch page, so it also counts people who stay signed in. Shows today by default; change the dates or clear them to see more. Times are in your time zone.</p>
     <form id="lgForm" class="hs-form">
       <label>From <input type="date" id="lgFrom"></label>
       <label>To <input type="date" id="lgTo"></label>
@@ -908,7 +912,11 @@
         r.people.length + " " + (r.people.length === 1 ? "person" : "people") + ".";
     }).catch(function (e) { $("lgErr").textContent = e.message; });
   }
-  function openLogins() { $("loginsDlg").showModal(); loadLogins(); }
+  function openLogins() {
+    $("lgForm").reset();
+    $("lgFrom").value = $("lgTo").value = ymd(new Date());   // start on the current day
+    $("loginsDlg").showModal(); loadLogins();
+  }
   function downloadLoginsCsv() {
     var lines = [["Type", "When", "Name", "Email", "Access or page", "When (UTC)"].join(",")];
     LG.rows.forEach(function (l) {
@@ -999,7 +1007,7 @@
     $("infoDelete").onclick = deleteInfo;
     $("partnersBtn").onclick = openPartners;
     $("loginsBtn").onclick = openLogins;
-    $("lgClose").onclick = function () { $("loginsDlg").close(); };
+    $("lgClose").onclick = $("lgX").onclick = function () { $("loginsDlg").close(); };
     $("lgCsv").onclick = downloadLoginsCsv;
     ["lgFrom", "lgTo"].forEach(function (id) { $(id).addEventListener("change", loadLogins); });
     $("lgQ").addEventListener("input", function () { clearTimeout(LG.timer); LG.timer = setTimeout(loadLogins, 300); });
@@ -1007,13 +1015,13 @@
     $("historyBtn").onclick = openHistory;
     $("envForm").addEventListener("submit", saveEnv);
     $("envCancel").onclick = function () { $("envDlg").close(); };
-    $("hsClose").onclick = function () { $("historyDlg").close(); };
+    $("hsClose").onclick = $("hsX").onclick = function () { $("historyDlg").close(); };
     $("hsCsv").onclick = downloadCsv;
     ["hsFrom", "hsTo", "hsEnv", "hsStatus"].forEach(function (id) { $(id).addEventListener("change", loadHistory); });
     $("hsQ").addEventListener("input", function () { clearTimeout(HS.timer); HS.timer = setTimeout(loadHistory, 300); });
     $("hsForm").addEventListener("submit", function (e) { e.preventDefault(); loadHistory(); });
     $("ptForm").addEventListener("submit", addPartner);
-    $("ptClose").onclick = function () { $("partnersDlg").close(); };
+    $("ptClose").onclick = $("ptX").onclick = function () { $("partnersDlg").close(); };
   }
   init();
 })();
